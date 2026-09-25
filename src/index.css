@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: #0B0E14;
+    color: #E7EBF4;
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+  }
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #242C3D;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a4a60;
+  }
+}
+
+/* ─── Node running pulse ──────────────────────────────────────────────────── */
+@keyframes pulse_run {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.55), 0 4px 20px rgba(0,0,0,0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(96, 165, 250, 0), 0 4px 20px rgba(0,0,0,0.5);
+  }
+}
+
+/* ─── Edge animated dash (running source nodes) ───────────────────────────── */
+@keyframes edge_dash {
+  to { stroke-dashoffset: -20; }
+}
+
+.react-flow__edge.running-edge .react-flow__edge-path {
+  stroke-dasharray: 8 6;
+  animation: edge_dash 0.55s linear infinite;
+}
+
+/* ─── React Flow global overrides ─────────────────────────────────────────── */
+.react-flow__node {
+  cursor: default;
+}
+
+/* Handles */
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 2px solid #5B8CFF !important;
+  background: #11151F !important;
+  border-radius: 50% !important;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.react-flow__handle:hover {
+  background: #5B8CFF !important;
+  box-shadow: 0 0 6px #5B8CFF80 !important;
+}
+
+/* Edge paths — transition stroke for color changes */
+.react-flow__edge-path {
+  transition: stroke 0.3s;
+}
+/* Hover brightens to accent */
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #5B8CFF !important;
+  stroke-width: 2 !important;
+}
+
+/* Minimap */
+.react-flow__minimap {
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+/* Make the viewport rectangle clearly visible */
+.react-flow__minimap-mask {
+  fill: rgba(7,10,16,0.72);
+}
+.react-flow__minimap-node {
+  rx: 3;
+}
+
+/* Controls */
+.react-flow__controls {
+  border-radius: 12px !important;
+  overflow: hidden;
+  border: 1px solid #242C3D !important;
+  background: #11151F !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.react-flow__controls-button {
+  background: #11151F !important;
+  border-bottom: 1px solid #242C3D !important;
+  color: #8B94A7 !important;
+  transition: background 0.15s, color 0.15s;
+}
+.react-flow__controls-button:hover {
+  background: #1a2030 !important;
+  color: #E7EBF4 !important;
+}
+.react-flow__controls-button svg {
+  fill: currentColor !important;
+}
+
+/* Background canvas */
+.react-flow__background {
+  background: #0B0E14;
+}
+
+/* Remove React Flow default selection outline on space nodes */
+.react-flow__node.selected .react-flow__resize-control {
+  display: none;
+}
