@@ -498,7 +498,11 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
           'POST',
           body,
         );
-        if (current === generation) created = team;
+        // A poll begun before POST may omit both the team and its default graph.
+        // Drain it so action() performs a genuinely post-create refresh.
+        if (refreshing) await refreshing;
+        requireSession(current);
+        created = team;
       });
       return current === generation ? created : null;
     },
