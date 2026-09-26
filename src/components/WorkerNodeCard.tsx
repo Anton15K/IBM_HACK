@@ -4,6 +4,7 @@ import type { NodeProps, Node } from '@xyflow/react';
 import type { WorkerNode } from '../types';
 import { statusColor, statusLabel, priorityColor, PROVIDER_LABELS, NODE_TYPE_LABELS } from '../utils/colors';
 import { useStore } from '../store';
+import { blockedWorkerInputsReady } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
 
 export type WorkerNodeData = WorkerNode & Record<string, unknown>;
@@ -35,6 +36,7 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
   const isApproval = node.status === 'needs_approval';
   const isDone = node.status === 'done';
   const isBlocked = node.status === 'blocked';
+  const inputsReady = blockedWorkerInputsReady(fullNode, nodes);
 
   // Selected ring glow
   const selectedShadow = selected
@@ -68,7 +70,7 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
   type FooterMode = 'approve' | 'run' | 'idle';
   let footerMode: FooterMode = 'idle';
   if (editable && !busy && isApproval && node.currentAttemptId) footerMode = 'approve';
-  else if (editable && !busy && !isRunning && node.type !== 'inbox' && node.status !== 'queued' && !isDone && !isBlocked) footerMode = 'run';
+  else if (editable && !busy && !isRunning && node.type !== 'inbox' && node.status !== 'queued' && !isDone && (!isBlocked || inputsReady)) footerMode = 'run';
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -218,6 +220,11 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
               </button>
             )}
           </div>
+        )}
+        {inputsReady && (
+          <p className="text-[10px] text-accent mb-1" title="Inputs are complete. The server will recheck dependencies and workspace when you run.">
+            Inputs ready · retry available
+          </p>
         )}
         {footerMode === 'run' && (
           <button

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { GraphContext, WorkerNode, WorkspaceSnapshot } from '../src/types.js';
+import type { GraphContext, WorkerNode, WorkspaceSnapshot, ApiTokenUsage } from '../src/types.js';
 import { mutateProject, readProject } from './db.js';
 import { assemblePrompt, executeTask, type ExecuteTaskInput, type ExecuteTaskResult, type IncomingEdge } from './executor.js';
 
@@ -12,7 +12,7 @@ export interface Attempt {
   node: WorkerNode; graph: GraphContext; assembledPrompt: string;
   incoming: IncomingEdge[]; startedAt: string; finishedAt?: string;
   status: 'running' | 'waiting' | 'done' | 'failed'; output?: Output; error?: string;
-  taskId: string | null; sessionCosts: number | null;
+  taskId: string | null; sessionCosts: number | null; apiUsage?: ApiTokenUsage; model?: string;
   workspaceBefore: WorkspaceSnapshot | null; workspaceAfter: WorkspaceSnapshot | null;
   decision?: { decision: 'approve' | 'request_changes'; actor: string; feedback?: string; targetNodeId?: string; ts: string };
 }
@@ -163,7 +163,7 @@ export class Runtime {
     const promise = Promise.resolve().then(async () => {
       try {
         if (controller.signal.aborted) throw new Error('Canceled');
-        const result = await this.executor({ node: a.node, graph: a.graph, incoming: a.incoming, assembledPrompt: a.assembledPrompt, signal: controller.signal, attemptId: a.id,
+        const result = await this.executor({ orgId: a.orgId, node: a.node, graph: a.graph, incoming: a.incoming, assembledPrompt: a.assembledPrompt, signal: controller.signal, attemptId: a.id,
           onPrepared: ({ workspaceBefore, assembledPrompt }) => {
             if (controller.signal.aborted || a.status !== 'running') fail('Attempt canceled');
             a.workspaceBefore = workspaceBefore; a.assembledPrompt = assembledPrompt; this.saveAttempt(a);
@@ -183,10 +183,10 @@ export class Runtime {
     if (persisted && (persisted.status === 'done' || persisted.status === 'failed')) Object.assign(a, persisted);
     if (a.status === 'done' || a.status === 'failed') {
       if (result) {
-        a.taskId = result.taskId; a.sessionCosts = result.sessionCosts;
+        a.taskId = result.taskId; a.sessionCosts = result.sessionCosts; a.apiUsage = result.meta.apiUsage; a.model = result.meta.model;
         a.workspaceBefore = result.workspaceBefore ?? a.workspaceBefore; a.workspaceAfter = result.workspaceAfter ?? a.workspaceAfter;
         this.saveAttempt(a);
-        this.updateNode(a.orgId, a.nodeId, n => ({ ...n, history: n.history.map(h => h.attemptId === a.id ? { ...h, taskId: a.taskId, sessionCosts: a.sessionCosts, workspaceBefore: a.workspaceBefore?.fingerprint, workspaceAfter: a.workspaceAfter?.fingerprint } : h) }));
+        this.updateNode(a.orgId, a.nodeId, n => ({ ...n, history: n.history.map(h => h.attemptId === a.id ? { ...h, taskId: a.taskId, sessionCosts: a.sessionCosts, apiUsage: a.apiUsage, model: a.model ?? a.node.executor.model, workspaceBefore: a.workspaceBefore?.fingerprint, workspaceAfter: a.workspaceAfter?.fingerprint } : h) }));
       }
       return;
     }
@@ -194,10 +194,10 @@ export class Runtime {
     this.lastFinishedAt = Math.max(Date.now(), this.lastFinishedAt + 1);
     a.finishedAt = new Date(this.lastFinishedAt).toISOString();
     a.error = error ?? (result?.status === 'failed' ? result.error : undefined);
-    if (result) { a.taskId = result.taskId; a.sessionCosts = result.sessionCosts; a.workspaceBefore = result.workspaceBefore ?? a.workspaceBefore; a.workspaceAfter = result.workspaceAfter; if (result.status === 'done') a.output = result.output; }
+    if (result) { a.taskId = result.taskId; a.sessionCosts = result.sessionCosts; a.apiUsage = result.meta.apiUsage; a.model = result.meta.model; a.workspaceBefore = result.workspaceBefore ?? a.workspaceBefore; a.workspaceAfter = result.workspaceAfter; if (result.status === 'done') a.output = result.output; }
     this.saveAttempt(a);
     this.updateNode(a.orgId, a.nodeId, n => n.currentAttemptId !== a.id ? n : ({ ...n, status: a.status === 'done' ? 'done' : 'failed', progress: a.status === 'done' ? 100 : 0, output: a.output ?? n.output,
-      history: [...n.history, { ts: a.finishedAt!, provider: a.node.executor.provider, model: a.node.executor.model, status: a.status === 'done' ? 'done' : 'failed', summary: a.output?.summary ?? a.error ?? '', durationMs: Date.parse(a.finishedAt!) - Date.parse(a.startedAt), attemptId: a.id, taskId: a.taskId, sessionCosts: a.sessionCosts, workspaceBefore: a.workspaceBefore?.fingerprint, workspaceAfter: a.workspaceAfter?.fingerprint }] }));
+      history: [...n.history, { ts: a.finishedAt!, provider: a.node.executor.provider, status: a.status === 'done' ? 'done' : 'failed', summary: a.output?.summary ?? a.error ?? '', durationMs: Date.parse(a.finishedAt!) - Date.parse(a.startedAt), attemptId: a.id, taskId: a.taskId, sessionCosts: a.sessionCosts, apiUsage: a.apiUsage, model: a.model ?? a.node.executor.model, workspaceBefore: a.workspaceBefore?.fingerprint, workspaceAfter: a.workspaceAfter?.fingerprint }] }));
   }
   private wake(run: Run) {
     if (!active(run) || run.paused || this.closing) return;

@@ -1,165 +1,75 @@
 # TeamWeave
 
-## Demo
+TeamWeave connects team boards to coding projects. Each project graph contains tasks with prompts, model choices and dependencies. Agents work in a bound Git checkout, pass results to downstream tasks, and stop at human review gates.
 
-**Live demo:** https://anton15k.github.io/IBM_HACK/
+The [public page](https://anton15k.github.io/IBM_HACK/) is separate from the local full-stack application. GitHub Pages does not host its backend or run agents.
 
-Local dev: `npm run dev` · Production build: `npm run build`
+## Run locally
 
-> **Note:** Bob Gateway features require a locally running gateway (`npm run gateway`). The hosted demo uses simulated/mock executors.
+Requires Node.js 24+, npm and Git. Install IBM Bob Shell only if you want to execute Bob tasks.
 
-
-> **Miro for orchestrating AI-agent teams** — an infinite-canvas B2B web application where your organization's departments and teams each get a dedicated "space" on the canvas. Inside each space, you build directed graphs of agent-worker nodes: Inbox nodes that ingest research, Worker nodes that execute tasks, and Gate nodes that pause the flow for human review. Teams can run graphs with a single click, watch nodes execute in topological order (with gates pausing for approval), and inspect every node's prompt, context, executor config, and output in the right-side inspector panel.
-
-## Stack
-
-| Layer | Tech |
-|---|---|
-| UI framework | React 18 + TypeScript (strict) |
-| Canvas | [@xyflow/react](https://reactflow.dev/) (React Flow v12) |
-| State | [zustand](https://github.com/pmndrs/zustand) + localStorage persistence |
-| Styling | Tailwind CSS v3 (custom dark design tokens) |
-| Build | Vite 6 |
-
-## How to run
-
-```bash
-npm install
-npm run dev       # starts dev server at http://localhost:5173
-npm run build     # production build (zero TS errors)
+```sh
+npm ci
+# Terminal 1: allow only the directories containing projects agents may work on.
+TEAMWEAVE_WORKSPACE_ROOTS=/absolute/path/to/projects npm run dev:server
+# Terminal 2
+npm run dev
 ```
 
-## Features (M1 — canvas + runner)
+Open http://localhost:5173/IBM_HACK/ and register an organization. Use **Manage** to add departments, teams and members. Open a team, choose **New Project**, and enter an existing Git directory, its checked-out branch and a ref such as `HEAD` or a commit SHA.
 
-- **Infinite canvas** with dot-grid background, minimap, pan/zoom
-- **Org tree sidebar** — Acme Corp → departments → teams, with mini-graph previews and click-to-pan
-- **Team spaces** — large labeled container blocks on the canvas
-- **Worker/Gate/Inbox nodes** with status colors, progress bars, priority badges, provider labels
-- **Status colors**: draft=gray, ready=blue, running=blue pulse, done=green, rework=yellow, failed=red, needs_approval=yellow ring, blocked=gray-blue; critical priority overrides to red
-- **Inspector panel** — edit name, status, priority, prompt, executor, context files, owners; view output
-- **Gate nodes** — become `needs_approval`, show Approve / Request Changes buttons
-- **Graph runner** — TopBar "Run Graph" button executes a topological DAG pass; independent nodes run in parallel (visually)
-- **Templates drawer** — 4 built-in templates (Code Review, Write Tests, Fix Bug, Investigate); Save as Template from inspector
-- **Export/Import JSON** — full project round-trip; Reset to seed data
-- **localStorage persistence** — auto-saved on every change
+The backend listens on `127.0.0.1:7142`; SQLite stores users, roles, projects and execution history in `.data/teamweave.db`. The browser uses authenticated API requests; project data and API credentials are not persisted in browser localStorage.
 
-## Features (M2 — executors + cross-team + replay + settings)
+## Models and execution
 
-### Executors
-
-Real LLM executor layer behind a clean `Executor` interface (`src/executors/`):
-
-| Provider | What's needed | Default model |
+| Choice | Configuration | Behavior |
 |---|---|---|
-| `mock` | Nothing — always available | mock-v1 |
-| `openai` | OpenAI API key in Settings | gpt-4o-mini |
-| `anthropic` | Anthropic API key in Settings | claude-sonnet-4-5 |
-| `google` | Google AI API key in Settings | gemini-2.0-flash |
-| `bob` | Bob Gateway running locally | bob-4 |
+| Mock | None | Explicit simulation; no files changed or model calls |
+| Bob Shell | `BOB_API_KEY` or `~/.bob/api_key`; optional `BOB_BIN` | Runs Bob in the bound Git workspace with per-task coin and turn caps |
+| API model | An organization administrator adds a connection in **Backend** | OpenAI-compatible chat completions with bounded file tools and token limits |
 
-**How prompt assembly works:**  
-`assemblePrompt(node, graphContext, incoming)` in `src/executors/registry.ts` builds a structured prompt:
-1. `## Project Context` — goal, repo, conventions from the graph's `GraphContext`
-2. `## Task` — the node's `prompt.task`
-3. `## Context Files` — listed file/glob entries from `node.context.files`
-4. `## Extra Context` — `node.context.extra`
-5. `## Inputs from Upstream Nodes` — for each enabled input edge, the upstream node's summary, results, commands, and artifacts
-6. `## Refinements` — all `prompt.refinements` entries
-7. JSON instruction appended to all real LLM calls: asks for `{summary, results, commands, artifacts}` JSON
+API connections accept a label, base URL, model name and write-only API key. For z.ai use `https://api.z.ai/api/paas/v4` and an available model such as `glm-4.7-flash`. For an OpenAI-compatible endpoint, include its API path, for example `https://api.openai.com/v1`. Compatibility varies by model; native Anthropic and Google endpoints are not implemented in this runtime.
 
-View the assembled prompt for any node with the **"View assembled prompt"** button in the Inspector → Prompt section.
+Credentials are encrypted on the server. Back up the private `.teamweave_model_key` file alongside the database; losing it makes saved credentials unreadable. Do not commit either file. Outbound model hosts must appear in `TEAMWEAVE_MODEL_HOSTS` (comma-separated; defaults: `api.z.ai,api.openai.com`); HTTPS is required and redirects are rejected.
 
-**How to set API keys:**  
-Click the ⚙ icon in the top bar → Settings. Paste keys into the masked fields. Click **Save & Close**.  
-Keys are stored in `localStorage` under the key `teamweave-keys` and are **never included in exported project JSON**.  
-Use the **Test** button next to each provider to verify connectivity.
+- **AI plan** generates a small proposed graph. Review it and click **Apply plan** to create draft nodes. Applying does not execute tasks; a stale proposal must be regenerated.
+- Each worker chooses a provider and, for API models, a connection. **Run pending tasks** respects dependencies and review gates; a node can also be run individually.
+- API `report` tasks can list/read files. API `patch` tasks can also write files and run the fixed `node --test` command. Other test frameworks and arbitrary shell commands are not exposed by this API executor.
+- API runs use at most eight model rounds, up to 4,096 output tokens per request, and a two-minute execution deadline. Displayed API token usage is separate from Bobcoins. Missing provider usage is not treated as zero.
+- `report` and `patch` are supported outputs. Automatic commits and pull requests are not implemented.
 
-**Bob Gateway note:**
-The `bob` executor POSTs to `http://localhost:7142/execute` (configurable in Settings). If the gateway is not running, nodes fall back to the built-in simulator with a `[Simulated]` prefix in the summary.
+The local runner executes project test code as the backend's operating-system user. Use trusted local projects; this is not a container sandbox for untrusted tenant code. API file tools reject traversal, symlinks and sensitive paths, and test subprocesses receive a restricted environment.
 
-### Bob Gateway (optional, for live Bob runs)
+## Graphs are bound to projects
 
-The gateway lets Bob-provider nodes execute tasks through the real IBM Bob Shell CLI
-instead of the simulator.
+Explicit project creation requires `workspace.path`, `workspace.branch` and `workspace.ref`. This release uses an existing directory; it does not create folders or silently switch branches. Automatically created empty boards remain editable drafts until a workspace is configured for real execution.
 
-```bash
-# 1. Install IBM Bob Shell and add your API key to ~/.bob/api_key
-# 2. Start the gateway (no npm install needed — zero dependencies):
-node bob-gateway/server.js          # or: npm run gateway
-# 3. In TeamWeave Settings, confirm Bob Gateway URL = http://localhost:7142
+Before a real run, the server checks that the canonical Git worktree lies under the configured roots and that its current branch and commit match the requested binding. Nodes inherit the graph binding and may explicitly override it. Jobs sharing a worktree execute serially; separate worktrees can run independently.
+
+Each attempt records the node definition and prompt, upstream results, Git commit, dirty state, tracked diff and hashes of untracked files before and after execution. Unexpected changes from the graph checkpoint block further execution. Snapshots provide provenance; they are not a complete backup of untracked file contents.
+
+## Team workflow
+
+- Organization → departments → teams, with separate boards and parent navigation.
+- Administrator, editor and viewer access with inherited team roles and organization isolation.
+- Prompt refinements, comments, file references, owners, priority and reusable node templates.
+- Human approval gates, bounded rework, cancellation and persisted attempt history.
+- Cross-team handoffs create an inbox item with the source attempt and output; the receiving team chooses how to act on it.
+- Existing project export remains available. Execution status comes from the backend rather than a simulated progress timer.
+
+## Development
+
+React, TypeScript, React Flow and Zustand form the frontend; Fastify and SQLite provide the API and scheduler. IBM Bob Shell contributed implementation of frontend and backend components; integration, corrections and validation were reviewed separately.
+
+```sh
+npm run typecheck:server
+npm run test:server
+npm run test:client
+npm run build
 ```
 
-See [`bob-gateway/README.md`](bob-gateway/README.md) for full setup, security notes,
-and troubleshooting.
+Tests use local Git fixtures and fake provider responses rather than paid model calls. A production build generates frontend assets; it does not deploy the backend.
 
-### Cross-Team Send ("Send to Team")
+Optional configuration: `TEAMWEAVE_DB` selects another database; `PORT` changes the backend port. For a separate development instance, set `TEAMWEAVE_API_TARGET` on Vite and `TEAMWEAVE_FRONTEND_ORIGIN` on the backend to matching local addresses. Defaults remain ports 5173 and 7142.
 
-- **Right-click** any node card on the canvas → "📤 Send to Team…"
-- Or open a node in the **Inspector** → footer button "📤 Send to Team…"
-- A modal lets you pick the target team, add an optional message, and choose whether to escalate priority to **critical**
-- Creates an `inbox` node in the target team's graph with:
-  - Name: `From <source team>: <node name>`
-  - Status: `draft`
-  - `inboxMeta` embedded: `sourceNodeId`, `sourceTeamId`, message
-  - The original task + message in `prompt.task`
-- A toast notification confirms the send: `✓ Sent to <team>`
-- Inbox nodes show a **📥 icon** + **"from: <team>"** badge on the card
-- Inspector shows the **"⚙ Convert to Worker"** button on inbox nodes (clears inputs/meta, sets type → worker)
-
-### Session Replay
-
-Every executor run appends a `HistoryEntry` to `node.history`:
-```ts
-{ ts, provider, model, status: 'done'|'failed', summary, durationMs }
-```
-
-The Inspector **HISTORY** section (shown when history is non-empty) lists all runs newest-first. Each row shows provider, duration, and a **▶ Replay** button. The replay modal:
-- Animates a progress bar to 100% over ~2s
-- Shows the final summary from the recorded run
-- Is **read-only** — does not change node status
-
-### Other M2 improvements
-
-- Output section in Inspector uses red/green styling based on actual success/failure
-- Assembled prompt viewer modal with copy button
-- Zustand store version bumped to 2 with migration for `history: []` default on legacy nodes
-- `npm run build` green, zero new dependencies
-
-## Screenshot
-
-_Coming soon_
-
-## Seed data
-
-The app loads with **Acme Corp** pre-populated:
-- **Security Team**: 4-node graph (Recon → Exploit Analysis → Security Review Gate → Write CVE Report), with Recon done and Exploit Analysis running
-- **Backend Team**: 4-node graph (Investigate → Implement → Code Review Gate → Write Tests), with Investigate done and Implement in rework
-
-## Manual testing checklist
-
-### Keyless (mock)
-1. Reset to seed data → click "Run Graph" on Backend Team → all nodes should complete via mock executor
-2. Right-click a node → "Send to Team…" → pick Security Team → inbox node appears there
-3. Double-click the inbox node → Inspector shows 📥 icon + "cross-team" badge → click "⚙ Convert to Worker"
-4. Run a worker node manually → wait for done → Inspector HISTORY shows one entry → click ▶ Replay → progress bar animates → summary appears
-
-### With OpenAI key
-1. ⚙ Settings → paste OpenAI key → Save & Close
-2. Pick any worker node → set Provider = openai → click ▶ Run Node
-3. Node should animate, call the API, fill real output + summary
-4. HISTORY shows one entry with provider=openai and real duration
-
-### Assembled prompt
-1. Any worker node with upstream inputs → Inspector → "View assembled prompt" → shows full multi-section prompt
-
-## Roadmap
-
-- [x] **M1**: Canvas, spaces, nodes, mock runner, templates, persistence
-- [x] **M2**: Real LLM executors (OpenAI/Anthropic/Google/Bob), cross-team send, session replay, settings with BYO keys
-- [x] **M3**: Bob Gateway — local HTTP server connecting TeamWeave UI to the `bob run` CLI (`bob-gateway/server.js`)
-- [ ] **M4**: Collaboration (multi-user, presence, comments)
-- [ ] **M5**: Persistent backend, auth, org management
-
-## License
-
-MIT
+MIT license.

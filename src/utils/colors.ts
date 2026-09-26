@@ -40,6 +40,7 @@ export function priorityColor(priority: Priority): string {
 
 export const PROVIDER_LABELS: Record<string, string> = {
   bob: 'Bob',
+  api: 'API model',
   openai: 'OpenAI',
   anthropic: 'Claude',
   google: 'Gemini',

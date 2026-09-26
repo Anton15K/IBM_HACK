@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore, sessionRequest } from '../store';
-import type { WorkerNode, WorkspaceSnapshot } from '../types';
+import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
 import { assemblePrompt, type IncomingEdge } from '../prompt';
 import { statusColor } from '../utils/colors';
+import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
 import AssembledPromptModal from './AssembledPromptModal';
 import WorkspaceEditor from './WorkspaceEditor';
+
+interface ModelDescriptor {
+  id: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+}
+
 interface Attempt {
   id: string;
   nodeVersion: number;
@@ -19,6 +28,8 @@ interface Attempt {
   output?: WorkerNode['output'];
   workspaceBefore: WorkspaceSnapshot | null;
   workspaceAfter: WorkspaceSnapshot | null;
+  apiUsage?: { promptTokens: number; completionTokens: number; totalTokens: number; incomplete?: boolean };
+  model?: string;
 }
 interface Handoff {
   id: string;
@@ -82,6 +93,16 @@ function Snapshot({
     <p className="text-muted text-[10px]">{title}: not recorded</p>
   );
 }
+
+const PROVIDER_LABELS: Record<Provider, string> = {
+  bob: 'Bob Shell',
+  mock: 'Mock · no spend',
+  api: 'API model',
+  openai: 'OpenAI · unsupported',
+  anthropic: 'Anthropic · unsupported',
+  google: 'Google · unsupported',
+};
+
 export default function Inspector() {
   const state = useStore();
   const node = state.nodes.find((n) => n.id === state.selectedNodeId)!;
@@ -100,6 +121,21 @@ export default function Inspector() {
   const [feedback, setFeedback] = useState('');
   const [target, setTarget] = useState(reworkTargets[0]?.id ?? '');
   const [savingTemplate, setSavingTemplate] = useState(false);
+
+  // API model connections list for profile picker
+  const [apiConnections, setApiConnections] = useState<ModelDescriptor[]>([]);
+  const apiMountedRef = useRef(true);
+  useEffect(() => {
+    apiMountedRef.current = true;
+    return () => { apiMountedRef.current = false; };
+  }, []);
+  useEffect(() => {
+    if (!(state.capabilities?.providers ?? []).includes('api')) return;
+    sessionRequest<{ connections: ModelDescriptor[] }>('/model-connections')
+      .then((data) => { if (apiMountedRef.current) setApiConnections(data.connections); })
+      .catch(() => { /* non-critical; user sees configure hint */ });
+  }, [state.capabilities?.providers, state.showSettings]);
+
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -173,6 +209,12 @@ export default function Inspector() {
       });
     setPreview(assemblePrompt(node, graph, incoming, null));
   };
+
+  const isApiProvider = node.executor.provider === 'api';
+  const isBobProvider = node.executor.provider === 'bob';
+  const isLegacyUnsupported = !['bob', 'mock', 'api'].includes(node.executor.provider);
+  const availableProviders = (state.capabilities?.providers ?? []) as Provider[];
+
   return (
     <>
       <aside className="w-80 bg-panel border-l border-line flex flex-col overflow-hidden shrink-0">
@@ -278,35 +320,111 @@ export default function Inspector() {
               <select
                 className="form-input mt-1"
                 value={node.executor.provider}
-                onChange={(e) =>
-                  update(node.id, {
-                    executor: {
-                      ...node.executor,
-                      provider: e.target.value as 'bob' | 'mock',
-                      model:
-                        e.target.value === 'bob'
-                          ? 'shell-configured'
-                          : 'mock-v1',
-                    },
-                  })
-                }
+                onChange={(e) => {
+                  const p = e.target.value as Provider;
+                  if (p === 'api') {
+                    const conn = apiConnections.find(c => c.id === node.executor.connectionId) ?? apiConnections[0];
+                    if (!conn) { setError('Add an API model connection in Backend settings first.'); return; }
+                    update(node.id, { executor: { ...node.executor, provider: 'api', model: conn.model, connectionId: conn.id, maxIterations: Math.min(node.executor.maxIterations, 8) } });
+                  } else {
+                    update(node.id, {
+                      executor: {
+                        ...node.executor,
+                        provider: p,
+                        model: p === 'bob' ? 'shell-configured' : 'mock-v1',
+                        connectionId: undefined,
+                        maxOutputTokens: undefined,
+                      },
+                    });
+                  }
+                }}
               >
-                {(state.capabilities?.providers ?? []).map((p) => (
+                {availableProviders.map((p) => (
                   <option key={p} value={p}>
-                    {p === 'mock' ? 'Mock · no spend' : 'Bob Shell'}
+                    {PROVIDER_LABELS[p] ?? p}
                   </option>
                 ))}
-                {!['bob', 'mock'].includes(node.executor.provider) && (
+                {isLegacyUnsupported && (
                   <option value={node.executor.provider}>
                     {node.executor.provider} · unsupported
                   </option>
                 )}
               </select>
             </label>
-            <p className="text-muted text-[10px]">
-              Bob model is Shell-configured. Skills and tools are requested task
-              instructions.
-            </p>
+
+            {/* API provider: profile selector */}
+            {isApiProvider && (
+              <>
+                {apiConnections.length === 0 ? (
+                  <p className="text-warn text-[10px]">
+                    No API model profiles configured. Ask an org admin to add one
+                    in Backend settings before running this node.
+                  </p>
+                ) : (
+                  <label>
+                    API model profile
+                    <select
+                      className="form-input mt-1"
+                      value={node.executor.connectionId ?? ''}
+                      onChange={(e) => {
+                        const conn = apiConnections.find((c) => c.id === e.target.value);
+                        if (!conn) return;
+                        update(node.id, {
+                          executor: {
+                            ...node.executor,
+                            provider: 'api',
+                            connectionId: conn.id,
+                            model: conn.model,
+                          },
+                        });
+                      }}
+                    >
+                      <option value="">— select a profile —</option>
+                      {apiConnections.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label} ({c.model})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {node.executor.connectionId && (
+                  <p className="text-muted text-[10px]">
+                    Profile: {apiConnections.find((c) => c.id === node.executor.connectionId)?.label ?? node.executor.connectionId} · model: {node.executor.model}
+                  </p>
+                )}
+                <label>
+                  Max output tokens (64–4096)
+                  <input
+                    type="number"
+                    min={64}
+                    max={4096}
+                    step={64}
+                    className="form-input mt-1"
+                    value={node.executor.maxOutputTokens ?? 1024}
+                    onChange={(e) =>
+                      update(node.id, {
+                        executor: {
+                          ...node.executor,
+                          maxOutputTokens: Math.min(4096, Math.max(64, Number(e.target.value) || 1024)),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </>
+            )}
+
+            {!isApiProvider && (
+              <p className="text-muted text-[10px]">
+                {isBobProvider
+                  ? 'Bob model is Shell-configured. Skills and tools are requested task instructions.'
+                  : isLegacyUnsupported
+                    ? `Provider '${node.executor.provider}' is not supported by this server.`
+                    : 'Mock provider: no real execution, no spend.'}
+              </p>
+            )}
+
             {(['skills', 'tools'] as const).map((field) => (
               <label className="block" key={field}>
                 {field}
@@ -322,24 +440,28 @@ export default function Inspector() {
             ))}
             {(
               [
+                ...(!isApiProvider
+                  ? [
+                      {
+                        key: 'maxCost' as const,
+                        label: 'Budget (Bobcoins)',
+                        min: 0.01,
+                        max: 3,
+                        fallback: 0.5,
+                        step: 0.01,
+                      },
+                    ]
+                  : []),
                 {
-                  key: 'maxCost',
-                  label: 'Budget (Bobcoins)',
-                  min: 0.01,
-                  max: 3,
-                  fallback: 0.5,
-                  step: 0.01,
-                },
-                {
-                  key: 'maxIterations',
+                  key: 'maxIterations' as const,
                   label: 'Maximum iterations',
                   min: 1,
-                  max: 100,
+                  max: isApiProvider ? 8 : 100,
                   fallback: 3,
                   step: 1,
                 },
                 {
-                  key: 'maxAttempts',
+                  key: 'maxAttempts' as const,
                   label: 'Maximum attempts',
                   min: 1,
                   max: 10,
@@ -560,9 +682,11 @@ export default function Inspector() {
               >
                 {a.status} · {new Date(a.startedAt).toLocaleString()}
                 <span className="block text-muted">
-                  {a.sessionCosts == null
-                    ? 'Cost unknown'
-                    : `${a.sessionCosts} Bobcoins`}{' '}
+                  {a.apiUsage
+                    ? `${a.apiUsage.totalTokens} tokens (API${a.apiUsage.incomplete ? ", partial usage" : ""})`
+                    : a.sessionCosts == null
+                      ? 'Cost unknown'
+                      : `${a.sessionCosts} Bobcoins`}{' '}
                   · task {a.taskId ?? 'unknown'}
                 </span>
               </button>
@@ -667,6 +791,7 @@ export default function Inspector() {
           ) : (
             <button
               className="action-button w-full"
+              disabled={isApiProvider && !node.executor.connectionId}
               onClick={() => void state.runNode(node.id)}
             >
               Run Node
@@ -700,7 +825,7 @@ export default function Inspector() {
           </button>
           <button
             className="small-button w-full"
-            onClick={() => void state.removeNode(node.id)}
+            onClick={() => void requestTaskDeletion(node, (message) => window.confirm(message), state.removeNode)}
           >
             Delete task
           </button>
@@ -721,19 +846,27 @@ export default function Inspector() {
               <button onClick={() => setDetail(null)}>×</button>
             </div>
             <p>
-              {detail.status} · definition version {detail.nodeVersion}
+              {detail.status} · definition version {detail.nodeVersion}{detail.model ? ` · ${detail.model}` : ""}
             </p>
             <p>
               Started {detail.startedAt}
               <br />
               Finished {detail.finishedAt ?? 'pending'}
             </p>
-            <p>
-              Task ID: {detail.taskId ?? 'unknown'} ·{' '}
-              {detail.sessionCosts == null
-                ? 'Cost unknown'
-                : `${detail.sessionCosts} Bobcoins`}
-            </p>
+            {detail.apiUsage ? (
+              <p>
+                API tokens: {detail.apiUsage.promptTokens} prompt +{' '}
+                {detail.apiUsage.completionTokens} completion ={' '}
+                {detail.apiUsage.totalTokens} total{detail.apiUsage.incomplete ? " (partial usage reported)" : ""}
+              </p>
+            ) : (
+              <p>
+                Task ID: {detail.taskId ?? 'unknown'} ·{' '}
+                {detail.sessionCosts == null
+                  ? 'Cost unknown'
+                  : `${detail.sessionCosts} Bobcoins`}
+              </p>
+            )}
             {detail.error && <p className="text-err">{detail.error}</p>}
             <Snapshot title="Before" value={detail.workspaceBefore} />
             <Snapshot title="After" value={detail.workspaceAfter} />
