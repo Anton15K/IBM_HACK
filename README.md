@@ -73,3 +73,13 @@ Tests use local Git fixtures and fake provider responses rather than paid model 
 Optional configuration: `TEAMWEAVE_DB` selects another database; `PORT` changes the backend port. For a separate development instance, set `TEAMWEAVE_API_TARGET` on Vite and `TEAMWEAVE_FRONTEND_ORIGIN` on the backend to matching local addresses. Defaults remain ports 5173 and 7142.
 
 MIT license.
+
+## Bob integration
+
+The `.bob/` directory is a Bob 2.0 workspace package: `mcp.json` registers the
+`filesystem` and `memory` MCP servers at workspace scope (loaded automatically
+by Bob Shell), and `rules/` + `skills/` contain project conventions and reusable
+task procedures loaded by reference in task prompts. See [`.bob/README.md`](.bob/README.md)
+for the full artifact table and usage examples.
+
+Try it: `bob mcp list`
