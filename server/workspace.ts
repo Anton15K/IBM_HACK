@@ -20,7 +20,7 @@ import { execFile as _execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, join } from 'node:path';
+import { isAbsolute, relative, join, dirname } from 'node:path';
 import type { WorkspaceBinding, WorkspaceSnapshot } from '../src/types.js';
 
 const execFile = promisify(_execFile);
@@ -185,7 +185,7 @@ export async function resolveBinding(
   if (currentBranch !== binding.branch)
     throw Object.assign(
       new Error(`Branch mismatch: requested '${binding.branch}', current is '${currentBranch}'`),
-      { code: 'WORKSPACE_BRANCH_MISMATCH' },
+      { code: 'WORKSPACE_BRANCH_MISMATCH', currentBranch },
     );
 
   // Resolve requested ref to a commit SHA; use ^{commit} to dereference annotated tags.

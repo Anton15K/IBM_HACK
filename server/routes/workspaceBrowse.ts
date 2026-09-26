@@ -17,7 +17,7 @@
 import { execFile as _execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { realpath, readdir, lstat } from 'node:fs/promises';
-import { basename, isAbsolute } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { resolveSession } from '../session.js';
 import { resolveAllowedRoots } from '../executor.js';
@@ -47,11 +47,17 @@ async function resolveRoots(injected?: string[]): Promise<string[]> {
   return out;
 }
 
-/** Run git command with a 2s per-check timeout; returns true if exit 0 */
-async function isGitWorktree(dirPath: string): Promise<boolean> {
+/**
+ * Run git command with a capped timeout; returns true if exit 0.
+ * @param dirPath directory to check
+ * @param timeoutMs max time to spend (clamped to [0, 2000])
+ */
+export async function isGitWorktree(dirPath: string, timeoutMs = 2000): Promise<boolean> {
+  const capped = Math.max(0, Math.min(2000, timeoutMs));
+  if (capped === 0) return false;
   try {
     await execFile('git', ['-C', dirPath, 'rev-parse', '--git-common-dir'], {
-      timeout: 2000,
+      timeout: capped,
       windowsHide: true,
     });
     return true;
@@ -61,9 +67,10 @@ async function isGitWorktree(dirPath: string): Promise<boolean> {
 }
 
 /** Run git worktree checks bounded by concurrency and an overall deadline */
-async function checkGitWorktrees(
+export async function checkGitWorktrees(
   paths: string[],
   budgetMs: number,
+  checker: (path: string, timeoutMs: number) => Promise<boolean> = isGitWorktree,
 ): Promise<Map<string, boolean>> {
   const result = new Map<string, boolean>();
   const deadline = Date.now() + budgetMs;
@@ -71,9 +78,11 @@ async function checkGitWorktrees(
 
   async function worker() {
     while (idx < paths.length) {
-      if (Date.now() >= deadline) return;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return;
       const p = paths[idx++]!;
-      result.set(p, await isGitWorktree(p));
+      const timeout = Math.max(0, Math.min(2000, remaining));
+      result.set(p, await checker(p, timeout));
     }
   }
 
@@ -128,7 +137,10 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
       // Determine which directories to list
       let targets: { dir: string; parentPath: string | null }[];
 
-      if (!rawPath || !isAbsolute(rawPath)) {
+      // rootMode: no ?path= → list dirs one level under each root; current=root itself
+      const rootMode = !rawPath || !isAbsolute(rawPath);
+
+      if (rootMode) {
         // No path or relative path: list one level under each root merged
         targets = resolvedRoots.map((r) => ({ dir: r, parentPath: null }));
       } else {
@@ -144,7 +156,8 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
         } catch {
           return reply.status(403).send({ error: 'Path is not under any configured workspace root' });
         }
-        targets = [{ dir: resolved, parentPath: resolvedRoots.includes(resolved) ? null : resolved.split('/').slice(0, -1).join('/') || '/' }];
+        // F4: use path.dirname for parent, not string split
+        targets = [{ dir: resolved, parentPath: resolvedRoots.includes(resolved) ? null : dirname(resolved) }];
       }
 
       // Collect directory entries from all targets
@@ -158,7 +171,9 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
         }
         for (const name of names) {
           if (entries.length >= BROWSE_CAP) break;
-          const fullPath = `${dir}/${name}`;
+          // F2a: exclude Git metadata directories
+          if (name === '.git') continue;
+          const fullPath = join(dir, name); // F4: use path.join
           try {
             const st = await lstat(fullPath);
             if (!st.isDirectory()) continue;
@@ -183,12 +198,27 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
       }
 
       // Check git worktrees with bounded concurrency and budget
-      const gitMap = await checkGitWorktrees(
-        entries.map((e) => e.path),
-        GIT_CHECK_BUDGET_MS,
-      );
+      // F2b: also check the current directory/directories themselves
+      const currentDirs: string[] = rootMode
+        ? resolvedRoots
+        : (targets[0] ? [targets[0].dir] : []);
+      const allPathsToCheck = [...entries.map((e) => e.path), ...currentDirs];
+      const gitMap = await checkGitWorktrees(allPathsToCheck, GIT_CHECK_BUDGET_MS);
 
       const parentPath = targets.length === 1 ? targets[0]!.parentPath : null;
+
+      // F2b: build current field(s)
+      // In root mode, each root is surfaced as a current-style selectable entry.
+      // In path mode, the single browsed directory is surfaced as current.
+      let current: { path: string; gitWorktree: boolean } | null = null;
+      if (!rootMode && targets[0]) {
+        const dir = targets[0].dir;
+        current = { path: dir, gitWorktree: gitMap.get(dir) ?? false };
+      }
+
+      const rootCurrentEntries: { path: string; gitWorktree: boolean }[] = rootMode
+        ? resolvedRoots.map((r) => ({ path: r, gitWorktree: gitMap.get(r) ?? false }))
+        : [];
 
       return reply.send({
         parentPath,
@@ -197,6 +227,10 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
           path: e.path,
           gitWorktree: gitMap.get(e.path) ?? false,
         })),
+        // F2b: current (path mode) or roots (root mode) — always included
+        ...(rootMode
+          ? { current: null, rootEntries: rootCurrentEntries }
+          : { current }),
       });
     });
 
@@ -218,8 +252,9 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
         return reply.status(400).send({ error: 'ref must be a string' });
 
       const path = body.path;
-      const branchInput = typeof body.branch === 'string' ? body.branch : '';
-      const ref = typeof body.ref === 'string' ? body.ref : 'HEAD';
+      // F6: trim branch and ref before use
+      const branchInput = typeof body.branch === 'string' ? body.branch.trim() : '';
+      const ref = (typeof body.ref === 'string' ? body.ref.trim() : '') || 'HEAD';
 
       const resolvedRoots = await resolveRoots(opts.allowedRootsOverride);
 
@@ -251,8 +286,8 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
         const code = e.code ?? 'WORKSPACE_ERROR';
 
         if (code === 'WORKSPACE_BRANCH_MISMATCH') {
-          const match = /current is '([^']+)'/.exec(e.message);
-          const checkedOutBranch = match ? match[1]! : undefined;
+          // F1: read structured metadata instead of parsing the error message
+          const checkedOutBranch = (e as Error & { currentBranch?: string }).currentBranch;
 
           // If branch was blank, retry with the actual checked-out branch
           if (!branchInput && checkedOutBranch) {

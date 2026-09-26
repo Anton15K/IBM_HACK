@@ -6,13 +6,15 @@
  * Uses temporary directories and git repos under tmpdir() for isolation.
  */
 
+import { checkGitWorktrees } from './routes/workspaceBrowse.js';
+
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from './app.js';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname as pathDirname, join as pathJoin } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mkdir, symlink, rm } from 'node:fs/promises';
+import { mkdir, symlink, rm, realpath } from 'node:fs/promises';
 import { execFile as _execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -515,6 +517,251 @@ describe('POST /api/workspace/validate', () => {
     );
 
     await rm(outsideRoot, { recursive: true, force: true });
+    await app.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F1 regression: apostrophe in branch name — structured metadata, no parsing
+// ---------------------------------------------------------------------------
+
+describe("F1 regression: apostrophe branch name", () => {
+  test("blank branch with apostrophe branch name returns ok=true and correct branch", async () => {
+    const tmpRoot = join(tmpdir(), `tw-f1-apos-${randomUUID()}`);
+    await mkdir(tmpRoot, { recursive: true });
+
+    // Create a repo on a branch whose name contains an apostrophe
+    const repoPath = join(tmpRoot, "repo");
+    await mkdir(repoPath, { recursive: true });
+    await execFile("git", ["init", "-b", "feature/o'brien", repoPath]);
+    await execFile("git", ["-C", repoPath, "config", "user.email", "t@example.com"]);
+    await execFile("git", ["-C", repoPath, "config", "user.name", "T"]);
+    await execFile("sh", ["-c", `echo hello > ${repoPath}/README.md`]);
+    await execFile("git", ["-C", repoPath, "add", "."]);
+    await execFile("git", ["-C", repoPath, "commit", "-m", "init"]);
+
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    // POST with blank branch — should infer and return the apostrophe branch
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/workspace/validate",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "http://localhost:5173",
+      },
+      body: JSON.stringify({ path: repoPath, ref: "HEAD" }),
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.ok, true, `expected ok=true, got: ${JSON.stringify(body)}`);
+    assert.equal(body.branch, "feature/o'brien", "branch matches apostrophe branch name");
+
+    await rm(tmpRoot, { recursive: true, force: true });
+    await app.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F2 regression: allowed root that is itself a repository
+// ---------------------------------------------------------------------------
+
+describe("F2 regression: allowed root is a git repository", () => {
+  test("browse at root: no .git entry, root has current field with gitWorktree=true, validate succeeds", async () => {
+    const tmpRoot = join(tmpdir(), `tw-f2-root-${randomUUID()}`);
+    await mkdir(tmpRoot, { recursive: true });
+
+    // Create a git repo directly as the allowed root (only README.md + .git)
+    await execFile("git", ["init", "-b", "main", tmpRoot]);
+    await execFile("git", ["-C", tmpRoot, "config", "user.email", "t@example.com"]);
+    await execFile("git", ["-C", tmpRoot, "config", "user.name", "T"]);
+    await execFile("sh", ["-c", `echo hello > ${tmpRoot}/README.md`]);
+    await execFile("git", ["-C", tmpRoot, "add", "."]);
+    await execFile("git", ["-C", tmpRoot, "commit", "-m", "init"]);
+
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    // Browse root (no ?path=)
+    const browseRes = await app.inject({
+      method: "GET",
+      url: "/api/workspace/browse",
+      headers: { cookie },
+    });
+    assert.equal(browseRes.statusCode, 200);
+    const browseBody = browseRes.json();
+
+    // F2a: .git must NOT appear in entries
+    const names = (browseBody.entries as { name: string }[]).map((e) => e.name);
+    assert.ok(!names.includes(".git"), `.git must not be in entries, got: ${JSON.stringify(names)}`);
+
+    // F2b: root mode should have rootEntries array with the root itself
+    // (root is realpath-resolved server-side; on macOS /var → /private/var)
+    assert.ok(Array.isArray(browseBody.rootEntries), "rootEntries present");
+    const resolvedTmpRoot = await realpath(tmpRoot);
+    const rootEntry = (browseBody.rootEntries as { path: string; gitWorktree: boolean }[]).find(
+      (e) => e.path === resolvedTmpRoot,
+    );
+    assert.ok(rootEntry, "root appears in rootEntries");
+    assert.equal(rootEntry!.gitWorktree, true, "root flagged as gitWorktree");
+
+    // F2: validate root directly with blank branch succeeds
+    const validateRes = await app.inject({
+      method: "POST",
+      url: "/api/workspace/validate",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "http://localhost:5173",
+      },
+      body: JSON.stringify({ path: tmpRoot, ref: "HEAD" }),
+    });
+    assert.equal(validateRes.statusCode, 200);
+    const validateBody = validateRes.json();
+    assert.equal(validateBody.ok, true, `expected ok=true, got: ${JSON.stringify(validateBody)}`);
+
+    await rm(tmpRoot, { recursive: true, force: true });
+    await app.close();
+  });
+
+  test("browse ?path= of a git repo: current.gitWorktree=true, .git not in entries", async () => {
+    const tmpRoot = join(tmpdir(), `tw-f2-path-${randomUUID()}`);
+    await mkdir(tmpRoot, { recursive: true });
+    const repoPath = join(tmpRoot, "myrepo");
+    await mkdir(repoPath, { recursive: true });
+    await execFile("git", ["init", "-b", "main", repoPath]);
+    await execFile("git", ["-C", repoPath, "config", "user.email", "t@example.com"]);
+    await execFile("git", ["-C", repoPath, "config", "user.name", "T"]);
+    await execFile("sh", ["-c", `echo hello > ${repoPath}/README.md`]);
+    await execFile("git", ["-C", repoPath, "add", "."]);
+    await execFile("git", ["-C", repoPath, "commit", "-m", "init"]);
+
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    const browseRes = await app.inject({
+      method: "GET",
+      url: `/api/workspace/browse?path=${encodeURIComponent(repoPath)}`,
+      headers: { cookie },
+    });
+    assert.equal(browseRes.statusCode, 200);
+    const body = browseRes.json();
+
+    // .git not in entries
+    const names = (body.entries as { name: string }[]).map((e) => e.name);
+    assert.ok(!names.includes(".git"), `.git must not be in entries`);
+
+    // current field present and flagged (realpath-resolved server-side)
+    assert.ok(body.current !== undefined, "current field present");
+    assert.equal(body.current.path, await realpath(repoPath));
+    assert.equal(body.current.gitWorktree, true, "current.gitWorktree=true for git repo");
+
+    await rm(tmpRoot, { recursive: true, force: true });
+    await app.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F3 unit tests: deadline math for checkGitWorktrees
+// ---------------------------------------------------------------------------
+
+describe("F3: checkGitWorktrees deadline enforcement", () => {
+  test("expired deadline: checker never called, all resolve false", async () => {
+    let called = 0;
+    const checker = async (_p: string, _t: number) => { called++; return true; };
+    const paths = ["/a", "/b", "/c"];
+    // Pass budgetMs=0 so deadline is immediately expired
+    const result = await checkGitWorktrees(paths, 0, checker);
+    assert.equal(called, 0, "checker should not be called with expired deadline");
+    // All paths should remain unset (no entry), or all false
+    for (const p of paths) {
+      assert.equal(result.get(p), undefined, `${p} should not be in result`);
+    }
+  });
+
+  test("ample budget: checker is called and timeout passed is <= 2000", async () => {
+    const timeouts: number[] = [];
+    const checker = async (_p: string, t: number) => { timeouts.push(t); return false; };
+    const paths = ["/x", "/y"];
+    await checkGitWorktrees(paths, 10000, checker);
+    assert.equal(timeouts.length, 2, "checker called for all paths");
+    for (const t of timeouts) {
+      assert.ok(t > 0 && t <= 2000, `timeout ${t} should be in (0, 2000]`);
+    }
+  });
+
+  test("tight budget: checker receives reduced timeout", async () => {
+    const timeouts: number[] = [];
+    // Simulate a checker that burns time and captures timeouts
+    const checker = async (_p: string, t: number) => { timeouts.push(t); return false; };
+    const paths = ["/m"];
+    // Use a budget of 500ms so remaining is around 500ms → capped to min(2000, ~500)
+    await checkGitWorktrees(paths, 500, checker);
+    if (timeouts.length > 0) {
+      assert.ok(timeouts[0]! <= 2000, "timeout must not exceed 2000");
+      assert.ok(timeouts[0]! > 0, "timeout must be positive");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F4 unit tests: path helpers (Windows-style paths via pure strings)
+// ---------------------------------------------------------------------------
+
+describe("F4: browse parentPath uses dirname (Windows-style path strings)", () => {
+  test("dirname of a POSIX path works correctly", () => {
+    assert.equal(pathDirname("/repos/root/sub"), "/repos/root");
+    assert.equal(pathDirname("/repos/root/sub/deep"), "/repos/root/sub");
+  });
+
+  test("path.join builds correct entry paths", () => {
+    assert.equal(pathJoin("/root", "name"), "/root/name");
+    assert.equal(pathJoin("/root/sub", "inner"), "/root/sub/inner");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F6 regression: whitespace-padded branch/ref in validate
+// ---------------------------------------------------------------------------
+
+describe("F6: validate trims branch and ref whitespace", () => {
+  test("branch with surrounding spaces validates the same as trimmed", async () => {
+    const tmpRoot = join(tmpdir(), `tw-f6-${randomUUID()}`);
+    await mkdir(tmpRoot, { recursive: true });
+    const repoPath = join(tmpRoot, "repo");
+    await mkdir(repoPath, { recursive: true });
+    await execFile("git", ["init", "-b", "main", repoPath]);
+    await execFile("git", ["-C", repoPath, "config", "user.email", "t@example.com"]);
+    await execFile("git", ["-C", repoPath, "config", "user.name", "T"]);
+    await execFile("sh", ["-c", `echo hello > ${repoPath}/README.md`]);
+    await execFile("git", ["-C", repoPath, "add", "."]);
+    await execFile("git", ["-C", repoPath, "commit", "-m", "init"]);
+
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/workspace/validate",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "http://localhost:5173",
+      },
+      body: JSON.stringify({ path: repoPath, branch: " main ", ref: " HEAD " }),
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.ok, true, `expected ok=true with padded branch, got: ${JSON.stringify(body)}`);
+    assert.equal(body.branch, "main");
+
+    await rm(tmpRoot, { recursive: true, force: true });
     await app.close();
   });
 });

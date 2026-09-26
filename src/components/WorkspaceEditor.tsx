@@ -18,9 +18,18 @@ interface BrowseEntry {
   gitWorktree: boolean;
 }
 
+interface BrowseCurrentEntry {
+  path: string;
+  gitWorktree: boolean;
+}
+
 interface BrowseResponse {
   parentPath: string | null;
   entries: BrowseEntry[];
+  /** The currently-browsed directory itself (path mode) */
+  current?: BrowseCurrentEntry | null;
+  /** Selectable root-level entries (root mode) */
+  rootEntries?: BrowseCurrentEntry[];
 }
 
 interface ValidateOk {
@@ -72,6 +81,23 @@ export function normalizeEntryName(raw: string): string {
   return raw.trim();
 }
 
+/**
+ * Platform-neutral absolute path check.
+ * Accepts:
+ *   - POSIX absolute: starts with /
+ *   - Windows backslash: starts with \
+ *   - Windows drive letter: X:\ or X:/
+ *   - UNC: \\server\share
+ */
+export function isAbsoluteLikePath(p: string): boolean {
+  if (!p) return false;
+  // POSIX or backslash root
+  if (p[0] === '/' || p[0] === '\\') return true;
+  // Drive letter: e.g. C:\ or C:/
+  if (/^[A-Za-z]:[/\\]/.test(p)) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // WorkspaceEditor component
 // ---------------------------------------------------------------------------
@@ -96,6 +122,8 @@ export default function WorkspaceEditor({
   const [browsePath, setBrowsePath] = useState<string | null>(null);
   const [browseEntries, setBrowseEntries] = useState<BrowseEntry[]>([]);
   const [browseParent, setBrowseParent] = useState<string | null>(null);
+  const [browseCurrent, setBrowseCurrent] = useState<BrowseCurrentEntry | null>(null);
+  const [browseRootEntries, setBrowseRootEntries] = useState<BrowseCurrentEntry[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
 
@@ -144,6 +172,8 @@ export default function WorkspaceEditor({
       setBrowsePath(path);
       setBrowseEntries(res.entries);
       setBrowseParent(res.parentPath);
+      setBrowseCurrent(res.current ?? null);
+      setBrowseRootEntries(res.rootEntries ?? []);
     } catch (err: unknown) {
       setBrowseError((err as Error).message ?? 'Browse failed');
     } finally {
@@ -157,6 +187,8 @@ export default function WorkspaceEditor({
     setBrowseEntries([]);
     setBrowsePath(null);
     setBrowseParent(null);
+    setBrowseCurrent(null);
+    setBrowseRootEntries([]);
     const res = await loadRoots();
     if (res?.configured) {
       await loadBrowse(null);
@@ -172,6 +204,13 @@ export default function WorkspaceEditor({
     } else {
       void loadBrowse(entry.path);
     }
+  }
+
+  function handleCurrentClick(entry: BrowseCurrentEntry) {
+    setDraft((d) => ({ ...d, path: entry.path }));
+    setDirty(true);
+    setValidateResult(null);
+    setBrowseOpen(false);
   }
 
   async function handleApply() {
@@ -204,7 +243,7 @@ export default function WorkspaceEditor({
   }
 
   const applyDisabled =
-    !draft.path.startsWith('/') ||
+    !isAbsoluteLikePath(draft.path) ||
     !draft.ref.trim() ||
     validating;
 
@@ -271,8 +310,41 @@ export default function WorkspaceEditor({
             </div>
           )}
 
-          {!browseLoading && !browseError && browseEntries.length === 0 && rootsConfigured && (
+          {!browseLoading && !browseError && browseEntries.length === 0 && rootsConfigured && browseCurrent === null && browseRootEntries.length === 0 && (
             <p className="text-muted">No subdirectories found.</p>
+          )}
+
+          {/* F2b: root mode — each root selectable */}
+          {browseRootEntries.map((entry) => (
+            <button
+              key={entry.path}
+              type="button"
+              className="w-full text-left small-button flex items-center gap-1 font-medium"
+              onClick={() => handleCurrentClick(entry)}
+              title={entry.path}
+            >
+              <span>🏠</span>
+              <span className="flex-1 truncate">{entry.path}</span>
+              {entry.gitWorktree && (
+                <span className="text-accent text-[9px]">git</span>
+              )}
+            </button>
+          ))}
+
+          {/* F2b: path mode — current directory selectable */}
+          {browseCurrent && (
+            <button
+              type="button"
+              className="w-full text-left small-button flex items-center gap-1 italic"
+              onClick={() => handleCurrentClick(browseCurrent)}
+              title={browseCurrent.path}
+            >
+              <span>·</span>
+              <span className="flex-1">(this directory)</span>
+              {browseCurrent.gitWorktree && (
+                <span className="text-accent text-[9px]">git</span>
+              )}
+            </button>
           )}
 
           {browseEntries.map((entry) => (

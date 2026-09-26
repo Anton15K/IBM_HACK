@@ -7,7 +7,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBreadcrumb, canGoUp, normalizeEntryName } from './components/WorkspaceEditor';
+import { buildBreadcrumb, canGoUp, normalizeEntryName, isAbsoluteLikePath } from './components/WorkspaceEditor';
 
 // ---------------------------------------------------------------------------
 // buildBreadcrumb
@@ -105,5 +105,39 @@ describe('normalizeEntryName', () => {
 
   test('already trimmed string is unchanged', () => {
     assert.equal(normalizeEntryName('myrepo'), 'myrepo');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAbsoluteLikePath (F5: platform-neutral absolute-path gate)
+// ---------------------------------------------------------------------------
+
+describe('isAbsoluteLikePath', () => {
+  test('POSIX absolute path is accepted', () => {
+    assert.equal(isAbsoluteLikePath('/work/repo'), true);
+  });
+
+  test('Windows drive-letter path (backslash) is accepted', () => {
+    assert.equal(isAbsoluteLikePath('C:\\work\\repo'), true);
+  });
+
+  test('Windows drive-letter path (forward slash) is accepted', () => {
+    assert.equal(isAbsoluteLikePath('D:/work/repo'), true);
+  });
+
+  test('UNC path is accepted', () => {
+    assert.equal(isAbsoluteLikePath('\\\\server\\share\\repo'), true);
+  });
+
+  test('relative path is rejected', () => {
+    assert.equal(isAbsoluteLikePath('work/repo'), false);
+  });
+
+  test('bare relative Windows-style path is rejected', () => {
+    assert.equal(isAbsoluteLikePath('work\\repo'), false);
+  });
+
+  test('empty string is rejected', () => {
+    assert.equal(isAbsoluteLikePath(''), false);
   });
 });
