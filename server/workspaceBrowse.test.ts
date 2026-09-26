@@ -436,6 +436,55 @@ describe('POST /api/workspace/validate', () => {
     await app.close();
   });
 
+  test('blank/omitted branch: infers checked-out branch, returns ok=true', async () => {
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    // Omit branch entirely — the primary "Browse → pick → Apply" flow
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/workspace/validate',
+      headers: {
+        'content-type': 'application/json',
+        cookie,
+        origin: 'http://localhost:5173',
+      },
+      body: JSON.stringify({ path: gitRepo, ref: 'HEAD' }),
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.ok, true, `expected ok=true, got: ${JSON.stringify(body)}`);
+    assert.equal(body.branch, 'main', 'branch pre-filled from checked-out branch');
+    assert.ok(typeof body.commit === 'string' && body.commit.length === 40, 'commit SHA present');
+    assert.equal(typeof body.dirty, 'boolean');
+    await app.close();
+  });
+
+  test('explicit wrong branch still fails with BRANCH_MISMATCH and checkedOutBranch', async () => {
+    const app = makeApp([tmpRoot]);
+    const regRes = await register(app);
+    const cookie = getCookie(regRes);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/workspace/validate',
+      headers: {
+        'content-type': 'application/json',
+        cookie,
+        origin: 'http://localhost:5173',
+      },
+      body: JSON.stringify({ path: gitRepo, branch: 'definitely-wrong', ref: 'HEAD' }),
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.code, 'BRANCH_MISMATCH');
+    assert.ok(typeof body.message === 'string', 'message present');
+    assert.equal(body.checkedOutBranch, 'main', 'checkedOutBranch returned for explicit wrong branch');
+    await app.close();
+  });
+
   test('path outside configured roots => ok=false', async () => {
     const outsideRoot = join(tmpdir(), `tw-validate-outside-${randomUUID()}`);
     await mkdir(outsideRoot, { recursive: true });

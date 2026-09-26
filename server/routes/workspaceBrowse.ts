@@ -231,43 +231,69 @@ export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
       // Strategy: run resolveBinding. If it throws WORKSPACE_BRANCH_MISMATCH,
       // re-run to get the checkedOutBranch by querying git directly.
 
-      // Use resolveBinding for all validation
+      // When branch is omitted/blank: first attempt resolveBinding; if it throws
+      // WORKSPACE_BRANCH_MISMATCH, extract the actual checked-out branch from the
+      // error message and retry with it — so the client-omits-branch flow succeeds
+      // and the response carries the real branch for pre-filling.
+      // An explicit non-empty wrong branch still fails with BRANCH_MISMATCH.
       const binding = { path, branch: branchInput || 'placeholder', ref };
 
+      async function attemptResolve(b: typeof binding): Promise<{ worktreeRoot: string }> {
+        return resolveBinding(b, resolvedRoots);
+      }
+
+      let resolvedWorktreeRoot: string;
       try {
-        const { worktreeRoot } = await resolveBinding(binding, resolvedRoots);
-
-        // Get HEAD commit and dirty flag
-        const { stdout: commitOut } = await execFile('git', ['rev-parse', 'HEAD'], { cwd: worktreeRoot });
-        const commit = commitOut.trim();
-
-        const { stdout: statusOut } = await execFile('git', ['status', '--porcelain'], { cwd: worktreeRoot });
-        const dirty = statusOut.trim().length > 0;
-
-        const { stdout: branchOut } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreeRoot });
-        const checkedOutBranch = branchOut.trim();
-
-        return reply.send({ ok: true, path, branch: checkedOutBranch, commit, dirty });
+        const { worktreeRoot } = await attemptResolve(binding);
+        resolvedWorktreeRoot = worktreeRoot;
       } catch (err: unknown) {
         const e = err as Error & { code?: string };
         const code = e.code ?? 'WORKSPACE_ERROR';
 
-        // If branch mismatch: also return checkedOutBranch
         if (code === 'WORKSPACE_BRANCH_MISMATCH') {
-          // Extract the current branch from the error message or re-query
-          // The error message from workspace.ts includes the current branch
           const match = /current is '([^']+)'/.exec(e.message);
           const checkedOutBranch = match ? match[1]! : undefined;
-          return reply.send({
-            ok: false,
-            code: 'BRANCH_MISMATCH',
-            message: e.message,
-            ...(checkedOutBranch !== undefined ? { checkedOutBranch } : {}),
-          });
-        }
 
-        return reply.send({ ok: false, code, message: e.message });
+          // If branch was blank, retry with the actual checked-out branch
+          if (!branchInput && checkedOutBranch) {
+            try {
+              const { worktreeRoot } = await resolveBinding(
+                { path, branch: checkedOutBranch, ref },
+                resolvedRoots,
+              );
+              resolvedWorktreeRoot = worktreeRoot;
+            } catch (retryErr: unknown) {
+              const re = retryErr as Error & { code?: string };
+              return reply.send({ ok: false, code: re.code ?? 'WORKSPACE_ERROR', message: re.message });
+            }
+          } else {
+            // Explicit wrong branch — fail as before
+            return reply.send({
+              ok: false,
+              code: 'BRANCH_MISMATCH',
+              message: e.message,
+              ...(checkedOutBranch !== undefined ? { checkedOutBranch } : {}),
+            });
+          }
+        } else {
+          return reply.send({ ok: false, code, message: e.message });
+        }
       }
+
+      // resolvedWorktreeRoot is guaranteed set here (all error paths returned above)
+      const worktreeRoot = resolvedWorktreeRoot!;
+
+      // Get HEAD commit and dirty flag
+      const { stdout: commitOut } = await execFile('git', ['rev-parse', 'HEAD'], { cwd: worktreeRoot });
+      const commit = commitOut.trim();
+
+      const { stdout: statusOut } = await execFile('git', ['status', '--porcelain'], { cwd: worktreeRoot });
+      const dirty = statusOut.trim().length > 0;
+
+      const { stdout: branchOut } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreeRoot });
+      const checkedOutBranch = branchOut.trim();
+
+      return reply.send({ ok: true, path, branch: checkedOutBranch, commit, dirty });
     });
   };
 }
