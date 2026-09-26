@@ -88,7 +88,7 @@ function rejectOptionLike(value: string, field: string): void {
     throw Object.assign(new Error(`${field} must not start with '-' (option-like value rejected)`), { code: 'WORKSPACE_OPTION_LIKE' });
 }
 
-function assertUnderRoot(resolvedPath: string, allowedRoots: string[]): void {
+export function assertUnderRoot(resolvedPath: string, allowedRoots: string[]): void {
   for (const root of allowedRoots) {
     const rel = relative(root, resolvedPath);
     if (!rel.startsWith('..') && !isAbsolute(rel)) return;

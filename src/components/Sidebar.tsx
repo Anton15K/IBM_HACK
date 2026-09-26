@@ -87,12 +87,38 @@ export default function Sidebar() {
                 const form = e.currentTarget;
                 const fd = Object.fromEntries(new FormData(form)) as Record<string, string>;
                 const { name, goal, wsPath, wsBranch, wsRef } = fd;
+                const hasWorkspace = !!(wsPath?.trim() && wsBranch?.trim());
+
+                // Validate workspace at set-time when fields are filled
+                if (hasWorkspace) {
+                  try {
+                    const validateBody: Record<string, string> = {
+                      path: wsPath.trim(),
+                      branch: wsBranch.trim(),
+                      ref: wsRef?.trim() || 'HEAD',
+                    };
+                    const vRes = await sessionRequest<{ ok: boolean; message?: string }>(
+                      '/workspace/validate',
+                      'POST',
+                      validateBody,
+                    );
+                    requireSession(generation);
+                    if (!vRes.ok) {
+                      setError(vRes.message ?? 'Workspace validation failed');
+                      return;
+                    }
+                  } catch (err) {
+                    setError((err as Error).message);
+                    return;
+                  }
+                }
+
                 const body: Record<string, unknown> = { name, goal, teamId: state.selectedTeamId };
-                if (wsPath?.trim() && wsBranch?.trim()) {
+                if (hasWorkspace) {
                   body.workspace = {
                     path: wsPath.trim(),
                     branch: wsBranch.trim(),
-                    ref: (wsRef?.trim() || 'HEAD'),
+                    ref: wsRef?.trim() || 'HEAD',
                   };
                 }
                 try {

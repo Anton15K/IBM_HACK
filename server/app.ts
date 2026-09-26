@@ -17,6 +17,7 @@ import { nodesRoutes } from './routes/nodes.js';
 import { graphsRoutes } from './routes/graphs.js';
 import { templatesRoutes } from './routes/templates.js';
 import { makeCapabilitiesRoutes, type CapabilitiesOptions } from './routes/capabilities.js';
+import { workspaceBrowseRoutes, type WorkspaceBrowseOptions } from './routes/workspaceBrowse.js';
 
 // Allowed local frontend origins for state-changing requests
 const ALLOWED_ORIGINS = new Set([
@@ -38,6 +39,8 @@ export interface BuildAppOptions {
   logger?: boolean | object;
   /** Injected for tests to control capabilities response without real env/files */
   capabilitiesOptions?: CapabilitiesOptions;
+  /** Injected for tests to override workspace roots in browse/validate routes */
+  workspaceBrowseOptions?: WorkspaceBrowseOptions;
   executor?: Executor;
   modelOptions?: { fetchFn?: typeof fetch; masterKey?: Buffer; allowedHosts?: string[] };
 }
@@ -115,6 +118,7 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
   app.register(graphsRoutes);
   app.register(templatesRoutes);
   app.register(makeCapabilitiesRoutes({ ...options.capabilitiesOptions, modelHosts: modelService.getAllowedHosts() }));
+  app.register(workspaceBrowseRoutes(options.workspaceBrowseOptions ?? {}));
 
   return app;
 }
