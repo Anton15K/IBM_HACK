@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   sessionRequest,
   sessionGeneration,
@@ -14,11 +14,57 @@ interface Member {
 }
 export default function AdminModal() {
   const state = useStore();
+  const panelRef = useRef<HTMLDivElement>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const close = () => useStore.setState({ showAdmin: false });
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const opener = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusable = () => Array.from(panel.querySelectorAll<HTMLElement>(
+      'button, input, select, textarea, a[href], [tabindex]',
+    )).filter((element) => element.tabIndex >= 0
+      && !element.matches(':disabled') && element.getClientRects().length > 0);
+    const focusFirst = () => (focusable()[0] ?? panel).focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        useStore.setState({ showAdmin: false });
+      } else if (event.key === 'Tab') {
+        const elements = focusable();
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+        if (!first || !last) {
+          event.preventDefault();
+          panel.focus();
+        } else if (event.shiftKey && (document.activeElement === first
+          || document.activeElement === panel)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && !panel.contains(event.target)) focusFirst();
+    };
+    panel.addEventListener('keydown', onKeyDown);
+    document.addEventListener('focusin', onFocusIn);
+    focusFirst();
+    return () => {
+      panel.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('focusin', onFocusIn);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
   useEffect(() => {
     let alive = true;
     void sessionRequest<Member[]>('/members')
@@ -57,10 +103,17 @@ export default function AdminModal() {
     : state.navigationId;
   return (
     <div className="modal-shade">
-      <div className="modal-panel space-y-5 max-h-[85vh] overflow-y-auto">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-modal-title"
+        tabIndex={-1}
+        className="modal-panel space-y-5 max-h-[85vh] overflow-y-auto"
+      >
         <div className="flex justify-between">
-          <h2 className="font-semibold">Manage company</h2>
-          <button onClick={close}>×</button>
+          <h2 id="admin-modal-title" className="font-semibold">Manage company</h2>
+          <button type="button" aria-label="Close company management" onClick={close}>×</button>
         </div>
         <fieldset disabled={busy} className="space-y-5">
           <form
