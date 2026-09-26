@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { WorkerNode, ApiTokenUsage } from '../../src/types.js';
 import { readProject, mutateProject, requireTeamAccess } from '../db.js';
 import { resolveSession } from '../session.js';
-import { fetchBounded, providerHttpError } from '../apiExecutor.js';
+import { fetchBoundedWithRetry, providerHttpError } from '../apiExecutor.js';
 import type { ModelService } from '../models.js';
 
 type PlanNode = { id: string; name: string; task: string; output: 'report' | 'patch'; dependsOn: string[] };
@@ -60,14 +60,15 @@ export async function plannerRoutes(app: FastifyInstance, opts: { modelService: 
     if (!conn) return fail('Model connection not found', 404);
     const request = {
       model: conn.model, max_tokens: 2048,
-      ...(new URL(conn.baseUrl).hostname === 'api.z.ai' && conn.model === 'glm-4.7-flash' ? { thinking: { type: 'disabled' } } : {}),
+      ...(new URL(conn.baseUrl).hostname === 'api.z.ai' ? { thinking: { type: 'disabled' } } : {}),
       messages: [
         { role: 'system', content: 'Propose a small coding workflow. Return only JSON {"nodes":[{"id":"unique-short-id","name":"Name","task":"Detailed English instructions","output":"report or patch","dependsOn":[]}]}. Use 1–8 nodes with an acyclic dependency graph. Tasks may inspect files and, in patch mode, edit files and run node --test. Report mode is read only. Do not add workspace, status or permission fields. This is a proposal for human acceptance; nothing runs now.' },
         { role: 'user', content: JSON.stringify({ intent: body.intent, goal: graph.goal, conventions: graph.conventions, workspace: graph.workspace, existing: project.nodes.filter(n => n.graphId === id).slice(0, 30).map(n => ({ name: n.name, task: n.prompt.task.slice(0, 500) })) }) },
       ],
     };
     let response;
-    try { response = await fetchBounded(conn.baseUrl.replace(/\/$/, '') + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.apiKey}` }, body: JSON.stringify(request), signal: AbortSignal.timeout(30_000) }, opts.fetchFn ?? fetch); }
+    const planSignal = AbortSignal.timeout(30_000);
+    try { response = await fetchBoundedWithRetry(conn.baseUrl.replace(/\/$/, '') + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.apiKey}` }, body: JSON.stringify(request), signal: planSignal }, opts.fetchFn ?? fetch, planSignal); }
     catch { return fail('Planning request failed or timed out', 502); }
     if (!response.ok) return fail(providerHttpError(response.status, response.body), 502);
     let raw;

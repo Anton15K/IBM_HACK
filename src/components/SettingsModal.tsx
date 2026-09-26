@@ -8,8 +8,8 @@ interface ModelDescriptor {
   model: string;
 }
 
-const DEFAULT_BASE_URL = 'https://api.z.ai/api/paas/v4';
-const DEFAULT_MODEL = 'glm-4.7-flash';
+const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_MODEL = 'z-ai/glm-5.3-flash';
 
 export default function SettingsModal() {
   const { capabilities: c, toggleSettings, auth } = useStore();
