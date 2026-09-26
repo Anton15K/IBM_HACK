@@ -624,6 +624,12 @@ export default function Inspector() {
               >
                 Approve current attempt
               </button>
+              <button
+                className="small-button w-full"
+                onClick={() => void state.cancelNode(node.id)}
+              >
+                Cancel review
+              </button>
               <select
                 className="form-input"
                 value={target}

@@ -146,6 +146,7 @@ export default function Sidebar() {
                 />
               </label>
               <WorkspaceEditor
+                key={graph.id}
                 value={graph.workspace}
                 onChange={(workspace) =>
                   state.updateGraph(graph.id, { workspace })

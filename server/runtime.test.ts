@@ -286,3 +286,52 @@ test('independent approval branch continues after another branch fails', async t
   assert.equal(f.runtime.node('org', 'last').status, 'running');
   f.finish('last'); await tick(); assert.equal(f.runtime.latestRun('org', 'g')!.status, 'failed');
 });
+
+
+test('explicit upstream rerun invalidates approved descendants without erasing history', async t => {
+  const first = node('first');
+  const gate = node('gate', ['first'], 'gate');
+  const last = node('last', ['gate']);
+  const unrelated = node('unrelated');
+  unrelated.inputs = [{ fromNodeId: 'first', enabled: false }];
+  const f = fixture([first, gate, last, unrelated]);
+  t.after(() => f.app.close());
+  await f.request('POST', '/api/graphs/g/run'); await tick();
+  f.finish('first'); f.finish('unrelated'); await tick();
+  const oldGate = f.runtime.node('org', 'gate').currentAttemptId!;
+  await f.request('POST', '/api/nodes/gate/decision', { attemptId: oldGate, decision: 'approve' });
+  await tick(); f.finish('last'); await tick();
+  assert.equal(f.runtime.latestRun('org', 'g')!.status, 'completed');
+
+  assert.equal((await f.request('POST', '/api/nodes/first/run')).statusCode, 202);
+  await tick();
+  assert.equal(f.runtime.node('org', 'gate').status, 'blocked');
+  assert.equal(f.runtime.node('org', 'last').status, 'blocked');
+  assert.equal(f.runtime.node('org', 'unrelated').status, 'done');
+  assert.equal(f.runtime.attempts('org', 'gate')[0]!.status, 'done');
+  assert.equal(f.runtime.node('org', 'last').history.length, 1);
+  f.finish('first'); await tick();
+  await f.request('POST', '/api/graphs/g/run'); await tick();
+  const currentGate = f.runtime.node('org', 'gate').currentAttemptId!;
+  assert.notEqual(currentGate, oldGate);
+  assert.equal((await f.request('POST', '/api/nodes/gate/decision', { attemptId: oldGate, decision: 'approve' })).statusCode, 409);
+  assert.equal(f.calls.filter(c => c.node.id === 'last').length, 1);
+  assert.equal(f.runtime.attempts('org', 'gate').at(-1)!.incoming[0]!.attemptId, f.runtime.node('org', 'first').currentAttemptId);
+  await f.request('POST', '/api/nodes/gate/decision', { attemptId: currentGate, decision: 'approve' });
+  await tick(); f.finish('last'); await tick();
+  assert.equal(f.runtime.latestRun('org', 'g')!.status, 'completed');
+});
+
+test('upstream rerun cannot invalidate a currently executing descendant', async t => {
+  const f = fixture([node('first'), node('last', ['first'])]);
+  t.after(() => f.app.close());
+  await f.request('POST', '/api/nodes/first/run'); await tick();
+  f.finish('first'); await tick();
+  await f.request('POST', '/api/nodes/last/run'); await tick();
+  const response = await f.request('POST', '/api/nodes/first/run');
+  assert.equal(response.statusCode, 409);
+  assert.match(response.json().error, /dependent/i);
+  assert.equal(f.runtime.attempts('org', 'first').length, 1);
+  assert.equal(f.runtime.node('org', 'last').status, 'running');
+  f.finish('last'); await tick();
+});

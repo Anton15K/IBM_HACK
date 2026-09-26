@@ -94,7 +94,30 @@ export class Runtime {
     if (this.graphActive(orgId, node.graphId)) fail('Graph run controls this node');
     const incoming = this.incoming(orgId, node);
     if (!incoming) fail('Dependencies must have successful attempts');
-    return this.dispatch(orgId, node, incoming);
+    const dependents = this.dependentNodes(orgId, node);
+    if (dependents.some(n => this.nodeActive(orgId, n.id)))
+      fail('A dependent task is active; finish or cancel it before rerunning this node');
+    const attempt = this.dispatch(orgId, node, incoming);
+    const invalidated = new Set(dependents.map(n => n.id));
+    if (invalidated.size) mutateProject(this.db, orgId, p => ({
+      ...p, nodes: p.nodes.map(n => invalidated.has(n.id)
+        ? { ...n, status: 'blocked', progress: 0 } : n),
+    }));
+    return attempt;
+  }
+  private dependentNodes(orgId: string, source: WorkerNode): WorkerNode[] {
+    const nodes = this.project(orgId).nodes.filter(n => n.graphId === source.graphId);
+    const affected = new Set([source.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const node of nodes) {
+        if (!affected.has(node.id) && node.inputs.some(i => i.enabled && affected.has(i.fromNodeId))) {
+          affected.add(node.id); changed = true;
+        }
+      }
+    }
+    return nodes.filter(n => n.id !== source.id && affected.has(n.id));
   }
   runGraph(orgId: string, graphId: string): Run {
     this.graph(orgId, graphId);
@@ -216,11 +239,7 @@ export class Runtime {
       if (this.attemptCount(orgId, target, run.id) >= (target.executor.maxAttempts ?? 3)) fail('Node attempt limit exhausted');
       a.decision = { decision, actor, feedback, targetNodeId, ts: new Date().toISOString() }; this.saveAttempt(a);
       run.reworkRounds++; run.paused = true; run.status = 'waiting'; this.saveRun(run);
-      const affected = new Set([target.id]);
-      const nodes = this.project(orgId).nodes.filter(n => n.graphId === node.graphId);
-      let changed = true;
-      while (changed) { changed = false; for (const n of nodes) if (!affected.has(n.id) && n.inputs.some(i => i.enabled && affected.has(i.fromNodeId))) { affected.add(n.id); changed = true; } }
-      for (const n of nodes.filter(n => affected.has(n.id))) {
+      for (const n of [target, ...this.dependentNodes(orgId, target)]) {
         if (this.nodeActive(orgId, n.id)) this.cancelNode(orgId, n.id, false);
         this.updateNode(orgId, n.id, current => ({ ...current, status: n.id === target.id ? 'rework' : 'blocked', progress: 0, ...(n.id === target.id ? { prompt: { ...current.prompt, refinements: [...current.prompt.refinements, { ts: new Date().toISOString(), author: actor, text: feedback ?? 'Changes requested' }] }, version: current.version + 1 } : {}) }));
       }
