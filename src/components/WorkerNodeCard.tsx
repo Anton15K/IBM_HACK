@@ -1,9 +1,10 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps, Node } from '@xyflow/react';
 import type { WorkerNode } from '../types';
 import { statusColor, statusLabel, priorityColor, PROVIDER_LABELS, NODE_TYPE_LABELS } from '../utils/colors';
 import { useStore } from '../store';
+import SendToTeamModal from './SendToTeamModal';
 
 export type WorkerNodeData = WorkerNode & Record<string, unknown>;
 export type WorkerNodeType = Node<WorkerNodeData, 'worker'>;
@@ -15,9 +16,13 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
   const selectNode = useStore((s) => s.selectNode);
   const approveGate = useStore((s) => s.approveGate);
   const nodes = useStore((s) => s.nodes);
+  const teams = useStore((s) => s.teams);
 
   const fullNode = nodes.find((n) => n.id === node.id) ?? node;
   const upstreamId = fullNode.inputs[0]?.fromNodeId;
+
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Status drives the color, NOT priority
   const color = statusColor(node.status, 'normal'); // pass 'normal' to strip priority override
@@ -34,6 +39,10 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
     : isRunning
     ? undefined // CSS animation handles the pulse shadow
     : `0 4px 20px rgba(0,0,0,0.5)`;
+
+  const sourceTeamName = node.inboxMeta
+    ? teams.find((t) => t.id === node.inboxMeta!.sourceTeamId)?.name
+    : null;
 
   const handleDoubleClick = () => selectNode(node.id);
 
@@ -58,7 +67,15 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
   if (isApproval) footerMode = 'approve';
   else if (!isRunning && !isDone && !isBlocked) footerMode = 'run';
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
   return (
+    <>
     <div
       className={`relative bg-card rounded-[14px] border-[1.5px] transition-all duration-300 select-none w-[210px] flex flex-col`}
       style={{
@@ -67,6 +84,7 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
         animation: isRunning && !selected ? 'pulse_run 1.4s ease-in-out infinite' : undefined,
       }}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Critical priority: red left stripe */}
       {isCritical && (
@@ -84,13 +102,14 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
         <div className="flex items-start justify-between gap-1 mb-1.5">
           {/* Type badge — 11px, stronger contrast */}
           <span
-            className="text-[11px] font-medium px-2 py-0.5 rounded-md leading-tight"
+            className="text-[11px] font-medium px-2 py-0.5 rounded-md leading-tight flex items-center gap-1"
             style={{
               backgroundColor: `${color}30`,
               color,
               border: `1px solid ${color}50`,
             }}
           >
+            {node.type === 'inbox' && <span>📥</span>}
             {NODE_TYPE_LABELS[node.type]}
           </span>
 
@@ -120,9 +139,21 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
         </div>
 
         {/* Name */}
-        <div className="text-ink text-[13px] font-semibold leading-snug line-clamp-2 mb-1.5">
+        <div className="text-ink text-[13px] font-semibold leading-snug line-clamp-2 mb-1">
           {node.name}
         </div>
+
+        {/* Source team badge for cross-team inbox */}
+        {sourceTeamName && (
+          <div className="mb-1.5">
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: '#5B8CFF22', color: '#5B8CFF', border: '1px solid #5B8CFF33' }}
+            >
+              from: {sourceTeamName}
+            </span>
+          </div>
+        )}
 
         {/* Provider meta — raised opacity */}
         <div className="flex items-center gap-1 mb-2">
@@ -207,5 +238,45 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
       <Handle type="target" position={Position.Left} style={{ top: '50%' }} />
       <Handle type="source" position={Position.Right} style={{ top: '50%' }} />
     </div>
+
+    {/* Right-click context menu */}
+    {contextMenu && (
+      <>
+        <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
+        <div
+          className="fixed z-50 bg-panel border border-line rounded-xl shadow-panel py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => { closeContextMenu(); selectNode(node.id); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-line transition-colors"
+          >
+            Open in Inspector
+          </button>
+          <button
+            onClick={() => { closeContextMenu(); runNode(node.id); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-accent hover:bg-line transition-colors"
+          >
+            ▶ Run Node
+          </button>
+          <div className="border-t border-line my-1" />
+          <button
+            onClick={() => { closeContextMenu(); setShowSendModal(true); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-muted hover:bg-line hover:text-ink transition-colors"
+          >
+            📤 Send to Team…
+          </button>
+        </div>
+      </>
+    )}
+
+    {/* Send to team modal */}
+    {showSendModal && (
+      <SendToTeamModal
+        node={fullNode as WorkerNode}
+        onClose={() => setShowSendModal(false)}
+      />
+    )}
+    </>
   );
 });

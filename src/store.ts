@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { WorkerNode, Team, GraphContext, NodeTemplate, NodeStatus, Project } from './types';
 import { SEED_PROJECT } from './seed';
+import { getExecutor, assemblePrompt } from './executors/registry';
 
 interface AppState {
   // Data
@@ -28,7 +29,7 @@ interface AppState {
   addEdge: (fromNodeId: string, toNodeId: string) => void;
   removeEdge: (fromNodeId: string, toNodeId: string) => void;
 
-  // Mock executor
+  // Executor
   runNode: (id: string) => void;
   approveGate: (id: string) => void;
   requestChanges: (gateId: string, targetNodeId: string) => void;
@@ -64,18 +65,16 @@ function nodeStatusColor(status: NodeStatus): string {
   }
 }
 
-const MOCK_SUMMARIES: Record<string, string> = {
-  worker: 'Task completed successfully. All objectives met and documented.',
-  inbox: 'Investigation complete. Key findings documented with recommendations.',
-};
-
-const MOCK_RESULTS: Record<string, string[]> = {
-  worker: ['Primary objective achieved', 'Edge cases handled', 'Documentation updated'],
-  inbox: ['Research complete', 'Three approaches evaluated', 'Recommendation provided'],
-};
-
 function makeId() {
   return `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** Migrate legacy nodes that lack history field */
+function migrateNodes(nodes: WorkerNode[]): WorkerNode[] {
+  return nodes.map((n) => ({
+    ...n,
+    history: n.history ?? [],
+  }));
 }
 
 export const useStore = create<AppState>()(
@@ -141,29 +140,86 @@ export const useStore = create<AppState>()(
           return;
         }
 
-        get().updateNode(id, { status: 'running', progress: 0 });
+        const graphContext = get().graphContexts.find((g) => g.id === node.graphId);
+        if (!graphContext) {
+          get().updateNode(id, { status: 'failed', progress: 0 });
+          return;
+        }
 
-        // Tick progress 0 → 100 over ~4s
-        let prog = 0;
-        const interval = setInterval(() => {
-          prog = Math.min(prog + 5, 100);
-          get().updateNode(id, { progress: prog });
-          if (prog >= 100) {
-            clearInterval(interval);
-            const n = get().nodes.find((nd) => nd.id === id);
-            if (!n) return;
+        // Gather upstream inputs
+        const incoming = node.inputs
+          .filter((i) => i.enabled)
+          .map((i) => {
+            const upstream = get().nodes.find((n) => n.id === i.fromNodeId);
+            if (!upstream) return null;
+            return {
+              summary_prev: upstream.output.summary,
+              results: upstream.output.results,
+              commands: upstream.output.commands,
+              artifacts: upstream.output.artifacts,
+            };
+          })
+          .filter(Boolean) as import('./types').EdgeContract[];
+
+        const prompt = assemblePrompt(node, graphContext, incoming);
+        const executor = getExecutor(node.executor.provider);
+
+        get().updateNode(id, { status: 'running', progress: 0 });
+        const startTs = Date.now();
+
+        executor
+          .run({ node, graphContext, incoming, assembledPrompt: prompt }, (pct) => {
+            get().updateNode(id, { progress: pct });
+          })
+          .then((output) => {
+            const durationMs = Date.now() - startTs;
+            const currentNode = get().nodes.find((n) => n.id === id);
+            const history = currentNode?.history ?? [];
             get().updateNode(id, {
               status: 'done',
               progress: 100,
-              output: {
-                summary: MOCK_SUMMARIES[n.type] ?? 'Task complete.',
-                results: MOCK_RESULTS[n.type] ?? [],
-                commands: [],
-                artifacts: [`output-${n.name.toLowerCase().replace(/\s+/g, '-')}.md`],
-              },
+              output,
+              history: [
+                ...history,
+                {
+                  ts: new Date().toISOString(),
+                  provider: node.executor.provider,
+                  model: node.executor.model,
+                  status: 'done' as const,
+                  summary: output.summary,
+                  durationMs,
+                  ...(output.simulated ? { simulated: true } : {}),
+                },
+              ],
             });
-          }
-        }, 200);
+          })
+          .catch((err: Error) => {
+            const durationMs = Date.now() - startTs;
+            const currentNode = get().nodes.find((n) => n.id === id);
+            const history = currentNode?.history ?? [];
+            const errMsg = err?.message ?? String(err);
+            get().updateNode(id, {
+              status: 'failed',
+              progress: 0,
+              output: {
+                summary: errMsg,
+                results: [],
+                commands: [],
+                artifacts: [],
+              },
+              history: [
+                ...history,
+                {
+                  ts: new Date().toISOString(),
+                  provider: node.executor.provider,
+                  model: node.executor.model,
+                  status: 'failed' as const,
+                  summary: errMsg,
+                  durationMs,
+                },
+              ],
+            });
+          });
       },
 
       approveGate: (id) => {
@@ -263,6 +319,7 @@ export const useStore = create<AppState>()(
           owners: { author: 'me@acme.com', responsible: [] },
           inputs: [],
           output: { summary: '', results: [], commands: [], artifacts: [] },
+          history: [],
           templateId,
           version: 1,
         };
@@ -283,7 +340,7 @@ export const useStore = create<AppState>()(
       importProject: (p) =>
         set({
           teams: p.teams,
-          nodes: p.nodes,
+          nodes: migrateNodes(p.nodes),
           graphContexts: p.graphContexts,
           templates: p.templates,
           selectedNodeId: null,
@@ -302,7 +359,17 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'teamweave-project',
-      version: 1,
+      version: 2,
+      migrate: (persisted: unknown, version: number) => {
+        if (version < 2) {
+          const state = persisted as AppState;
+          return {
+            ...state,
+            nodes: migrateNodes(state.nodes ?? []),
+          };
+        }
+        return persisted as AppState;
+      },
     }
   )
 );

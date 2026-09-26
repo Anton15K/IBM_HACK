@@ -12,6 +12,16 @@ export type NodeStatus =
 export type Priority = 'low' | 'normal' | 'high' | 'critical';
 export type Provider = 'bob' | 'openai' | 'anthropic' | 'google' | 'mock';
 
+export interface HistoryEntry {
+  ts: string;
+  provider: Provider;
+  model: string;
+  status: 'done' | 'failed';
+  summary: string;
+  durationMs: number;
+  simulated?: boolean;
+}
+
 export interface WorkerNode {
   id: string;
   graphId: string;
@@ -48,6 +58,13 @@ export interface WorkerNode {
     commands: string[];
     artifacts: string[];
   };
+  /** Inbox cross-team metadata */
+  inboxMeta?: {
+    sourceNodeId: string;
+    sourceTeamId: string;
+    message: string;
+  };
+  history: HistoryEntry[];
   templateId?: string;
   version: number;
   // canvas position (within team space)

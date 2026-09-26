@@ -85,6 +85,7 @@ export const SEED_PROJECT: Project = {
         commands: ['curl -X POST /api/v2/login -H "alg: none"'],
         artifacts: ['recon-report.md'],
       },
+      history: [],
       version: 1,
     },
     {
@@ -125,6 +126,7 @@ export const SEED_PROJECT: Project = {
       owners: { author: 'bob@acme.com', responsible: ['bob@acme.com', 'alice@acme.com'] },
       inputs: [{ fromNodeId: 'n-sec-1', enabled: true }],
       output: { summary: '', results: [], commands: [], artifacts: [] },
+      history: [],
       version: 1,
     },
     {
@@ -153,6 +155,7 @@ export const SEED_PROJECT: Project = {
       owners: { author: 'carol@acme.com', responsible: ['carol@acme.com'] },
       inputs: [{ fromNodeId: 'n-sec-2', enabled: true }],
       output: { summary: '', results: [], commands: [], artifacts: [] },
+      history: [],
       version: 1,
     },
     {
@@ -181,6 +184,7 @@ export const SEED_PROJECT: Project = {
       owners: { author: 'alice@acme.com', responsible: ['alice@acme.com'] },
       inputs: [{ fromNodeId: 'n-sec-gate', enabled: true }],
       output: { summary: '', results: [], commands: [], artifacts: [] },
+      history: [],
       version: 1,
     },
 
@@ -216,6 +220,7 @@ export const SEED_PROJECT: Project = {
         commands: [],
         artifacts: ['rate-limit-research.md'],
       },
+      history: [],
       version: 1,
     },
     {
@@ -261,6 +266,7 @@ export const SEED_PROJECT: Project = {
         commands: [],
         artifacts: ['src/middleware/rateLimiter.ts'],
       },
+      history: [],
       version: 2,
     },
     {
@@ -289,6 +295,7 @@ export const SEED_PROJECT: Project = {
       owners: { author: 'eve@acme.com', responsible: ['eve@acme.com'] },
       inputs: [{ fromNodeId: 'n-be-2', enabled: true }],
       output: { summary: '', results: [], commands: [], artifacts: [] },
+      history: [],
       version: 1,
     },
     {
@@ -323,6 +330,7 @@ export const SEED_PROJECT: Project = {
       owners: { author: 'frank@acme.com', responsible: ['frank@acme.com'] },
       inputs: [{ fromNodeId: 'n-be-gate', enabled: true }],
       output: { summary: '', results: [], commands: [], artifacts: [] },
+      history: [],
       version: 1,
     },
   ],

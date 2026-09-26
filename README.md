@@ -20,7 +20,7 @@ npm run dev       # starts dev server at http://localhost:5173
 npm run build     # production build (zero TS errors)
 ```
 
-## Features (M1)
+## Features (M1 — canvas + runner)
 
 - **Infinite canvas** with dot-grid background, minimap, pan/zoom
 - **Org tree sidebar** — Acme Corp → departments → teams, with mini-graph previews and click-to-pan
@@ -28,12 +28,78 @@ npm run build     # production build (zero TS errors)
 - **Worker/Gate/Inbox nodes** with status colors, progress bars, priority badges, provider labels
 - **Status colors**: draft=gray, ready=blue, running=blue pulse, done=green, rework=yellow, failed=red, needs_approval=yellow ring, blocked=gray-blue; critical priority overrides to red
 - **Inspector panel** — edit name, status, priority, prompt, executor, context files, owners; view output
-- **Mock executor** — Run Node button ticks progress 0→100 over ~4s then marks done
 - **Gate nodes** — become `needs_approval`, show Approve / Request Changes buttons
 - **Graph runner** — TopBar "Run Graph" button executes a topological DAG pass; independent nodes run in parallel (visually)
 - **Templates drawer** — 4 built-in templates (Code Review, Write Tests, Fix Bug, Investigate); Save as Template from inspector
 - **Export/Import JSON** — full project round-trip; Reset to seed data
-- **localStorage persistence** — auto-saves on every change
+- **localStorage persistence** — auto-saved on every change
+
+## Features (M2 — executors + cross-team + replay + settings)
+
+### Executors
+
+Real LLM executor layer behind a clean `Executor` interface (`src/executors/`):
+
+| Provider | What's needed | Default model |
+|---|---|---|
+| `mock` | Nothing — always available | mock-v1 |
+| `openai` | OpenAI API key in Settings | gpt-4o-mini |
+| `anthropic` | Anthropic API key in Settings | claude-sonnet-4-5 |
+| `google` | Google AI API key in Settings | gemini-2.0-flash |
+| `bob` | Bob Gateway running locally | bob-4 |
+
+**How prompt assembly works:**  
+`assemblePrompt(node, graphContext, incoming)` in `src/executors/registry.ts` builds a structured prompt:
+1. `## Project Context` — goal, repo, conventions from the graph's `GraphContext`
+2. `## Task` — the node's `prompt.task`
+3. `## Context Files` — listed file/glob entries from `node.context.files`
+4. `## Extra Context` — `node.context.extra`
+5. `## Inputs from Upstream Nodes` — for each enabled input edge, the upstream node's summary, results, commands, and artifacts
+6. `## Refinements` — all `prompt.refinements` entries
+7. JSON instruction appended to all real LLM calls: asks for `{summary, results, commands, artifacts}` JSON
+
+View the assembled prompt for any node with the **"View assembled prompt"** button in the Inspector → Prompt section.
+
+**How to set API keys:**  
+Click the ⚙ icon in the top bar → Settings. Paste keys into the masked fields. Click **Save & Close**.  
+Keys are stored in `localStorage` under the key `teamweave-keys` and are **never included in exported project JSON**.  
+Use the **Test** button next to each provider to verify connectivity.
+
+**Bob Gateway note:**  
+The `bob` executor POSTs to `http://localhost:7142/execute` (configurable in Settings). The gateway binary lives in `bob-gateway/` and will be released in the next milestone. If it's not running, nodes fail with a clear "Bob Gateway not running" error message.
+
+### Cross-Team Send ("Send to Team")
+
+- **Right-click** any node card on the canvas → "📤 Send to Team…"
+- Or open a node in the **Inspector** → footer button "📤 Send to Team…"
+- A modal lets you pick the target team, add an optional message, and choose whether to escalate priority to **critical**
+- Creates an `inbox` node in the target team's graph with:
+  - Name: `From <source team>: <node name>`
+  - Status: `draft`
+  - `inboxMeta` embedded: `sourceNodeId`, `sourceTeamId`, message
+  - The original task + message in `prompt.task`
+- A toast notification confirms the send: `✓ Sent to <team>`
+- Inbox nodes show a **📥 icon** + **"from: <team>"** badge on the card
+- Inspector shows the **"⚙ Convert to Worker"** button on inbox nodes (clears inputs/meta, sets type → worker)
+
+### Session Replay
+
+Every executor run appends a `HistoryEntry` to `node.history`:
+```ts
+{ ts, provider, model, status: 'done'|'failed', summary, durationMs }
+```
+
+The Inspector **HISTORY** section (shown when history is non-empty) lists all runs newest-first. Each row shows provider, duration, and a **▶ Replay** button. The replay modal:
+- Animates a progress bar to 100% over ~2s
+- Shows the final summary from the recorded run
+- Is **read-only** — does not change node status
+
+### Other M2 improvements
+
+- Output section in Inspector uses red/green styling based on actual success/failure
+- Assembled prompt viewer modal with copy button
+- Zustand store version bumped to 2 with migration for `history: []` default on legacy nodes
+- `npm run build` green, zero new dependencies
 
 ## Screenshot
 
@@ -45,11 +111,29 @@ The app loads with **Acme Corp** pre-populated:
 - **Security Team**: 4-node graph (Recon → Exploit Analysis → Security Review Gate → Write CVE Report), with Recon done and Exploit Analysis running
 - **Backend Team**: 4-node graph (Investigate → Implement → Code Review Gate → Write Tests), with Investigate done and Implement in rework
 
+## Manual testing checklist
+
+### Keyless (mock)
+1. Reset to seed data → click "Run Graph" on Backend Team → all nodes should complete via mock executor
+2. Right-click a node → "Send to Team…" → pick Security Team → inbox node appears there
+3. Double-click the inbox node → Inspector shows 📥 icon + "cross-team" badge → click "⚙ Convert to Worker"
+4. Run a worker node manually → wait for done → Inspector HISTORY shows one entry → click ▶ Replay → progress bar animates → summary appears
+
+### With OpenAI key
+1. ⚙ Settings → paste OpenAI key → Save & Close
+2. Pick any worker node → set Provider = openai → click ▶ Run Node
+3. Node should animate, call the API, fill real output + summary
+4. HISTORY shows one entry with provider=openai and real duration
+
+### Assembled prompt
+1. Any worker node with upstream inputs → Inspector → "View assembled prompt" → shows full multi-section prompt
+
 ## Roadmap
 
-- **M2**: Real LLM executor connections (bob, openai, anthropic, google) — currently mocked
-- **M3**: Collaboration (multi-user, presence, comments)
-- **M4**: Persistent backend, auth, org management
+- [x] **M1**: Canvas, spaces, nodes, mock runner, templates, persistence
+- [x] **M2**: Real LLM executors (OpenAI/Anthropic/Google/Bob), cross-team send, session replay, settings with BYO keys
+- [ ] **M3**: Collaboration (multi-user, presence, comments)
+- [ ] **M4**: Persistent backend, auth, org management
 
 ## License
 
