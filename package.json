@@ -7,10 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "gateway": "node bob-gateway/server.js"
+    "gateway": "node bob-gateway/server.js",
+    "dev:server": "tsx server/index.ts",
+    "test:server": "tsx --test server/*.test.ts",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@xyflow/react": "^12.6.4",
+    "fastify": "^5.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.5"
@@ -23,6 +28,7 @@
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.4",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }
