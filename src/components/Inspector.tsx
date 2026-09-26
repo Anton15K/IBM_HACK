@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore, sessionRequest } from '../store';
 import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
-import { assemblePrompt, type IncomingEdge } from '../prompt';
+import { assemblePrompt } from '../prompt';
+import { previewInputs } from '../prompt-preview';
 import { statusColor } from '../utils/colors';
 import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
@@ -187,27 +188,11 @@ export default function Inspector() {
   };
   const previewPrompt = () => {
     if (!graph) return;
-    const incoming: IncomingEdge[] = node.inputs
-      .filter((i) => i.enabled)
-      .flatMap((i) => {
-        const source = state.nodes.find((n) => n.id === i.fromNodeId);
-        return source
-          ? [
-              {
-                fromNodeId: source.id,
-                attemptId: source.currentAttemptId,
-                ...source.output,
-              },
-            ]
-          : [];
-      });
-    if (node.inboxMeta?.sourceOutput)
-      incoming.push({
-        fromNodeId: node.inboxMeta.sourceNodeId,
-        attemptId: node.inboxMeta.sourceAttemptId,
-        ...node.inboxMeta.sourceOutput,
-      });
-    setPreview(assemblePrompt(node, graph, incoming, null));
+    const { incoming, unavailableInputIds } = previewInputs(node, state.nodes);
+    const notice = unavailableInputIds.length
+      ? `Preview only: unavailable upstream results omitted (${unavailableInputIds.map((id) => state.nodes.find((source) => source.id === id)?.name ?? 'Unavailable task').join(', ')}). Execution will validate dependencies again.\n\n`
+      : '';
+    setPreview(notice + assemblePrompt(node, graph, incoming, null));
   };
 
   const isApiProvider = node.executor.provider === 'api';
@@ -637,8 +622,10 @@ export default function Inspector() {
             Preview assembled prompt
           </button>
           <p className="text-muted text-[10px]">
-            Preview uses saved definitions and visible inputs. The exact frozen
-            prompt, including resolved Git state, is recorded in each attempt.
+            Preview uses current definitions, completed visible inputs and pinned
+            handoff results. Unavailable inputs are omitted. The exact frozen
+            prompt, including gate provenance and resolved Git state, is recorded
+            in each attempt.
           </p>
           {node.inboxMeta && (
             <div className="bg-card border border-line rounded-lg p-3">
