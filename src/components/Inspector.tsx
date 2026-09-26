@@ -313,7 +313,7 @@ export default function Inspector() {
                   if (p === 'api') {
                     const conn = apiConnections.find(c => c.id === node.executor.connectionId) ?? apiConnections[0];
                     if (!conn) { setError('Add an API model connection in Backend settings first.'); return; }
-                    update(node.id, { executor: { ...node.executor, provider: 'api', model: conn.model, connectionId: conn.id, maxIterations: Math.min(node.executor.maxIterations, 8) } });
+                    update(node.id, { executor: { ...node.executor, provider: 'api', model: conn.model, connectionId: conn.id, maxIterations: Math.min(node.executor.maxIterations, 32) } });
                   } else {
                     update(node.id, {
                       executor: {
@@ -382,11 +382,11 @@ export default function Inspector() {
                   </p>
                 )}
                 <label>
-                  Max output tokens (64–4096)
+                  Max output tokens (64–65536)
                   <input
                     type="number"
                     min={64}
-                    max={4096}
+                    max={65536}
                     step={64}
                     className="form-input mt-1"
                     value={node.executor.maxOutputTokens ?? 1024}
@@ -394,7 +394,7 @@ export default function Inspector() {
                       update(node.id, {
                         executor: {
                           ...node.executor,
-                          maxOutputTokens: Math.min(4096, Math.max(64, Number(e.target.value) || 1024)),
+                          maxOutputTokens: Math.min(65536, Math.max(64, Number(e.target.value) || 1024)),
                         },
                       })
                     }
@@ -444,7 +444,7 @@ export default function Inspector() {
                   key: 'maxIterations' as const,
                   label: 'Maximum iterations',
                   min: 1,
-                  max: isApiProvider ? 8 : 100,
+                  max: isApiProvider ? 32 : 100,
                   fallback: 3,
                   step: 1,
                 },

@@ -21,6 +21,40 @@ async function register(app: ReturnType<typeof buildApp>, email: string) {
   return { cookie: r.headers['set-cookie']!.toString().split(';')[0]!, auth: r.json() };
 }
 const profile = { label: 'Test model', model: 'glm-4.7-flash', baseUrl: 'https://api.z.ai/api/paas/v4', apiKey: secret };
+test('local HTTP models require an exact private endpoint opt-in', () => {
+  const local = 'http://192.168.1.76:1234/v1';
+  assert.ok(validateBaseUrl(local, [], []));
+  assert.equal(validateBaseUrl(local, [], [local]), null);
+  assert.equal(validateBaseUrl(local + '/', [], [local]), null);
+  for (const url of [
+    'http://192.168.1.77:1234/v1', 'http://192.168.1.76:1235/v1',
+    'http://192.168.1.76:1234/other', local + '?key=secret', local + '#fragment',
+    'http://user:secret@192.168.1.76:1234/v1',
+  ]) assert.ok(validateBaseUrl(url, [], [local]), url);
+  for (const url of ['http://8.8.8.8:1234/v1', 'http://169.254.169.254/v1', 'http://example.com/v1'])
+    assert.ok(validateBaseUrl(url, [], [url]), url);
+  assert.equal(validateBaseUrl('https://openrouter.ai/api/v1', ['openrouter.ai'], [local]), null);
+  assert.ok(validateBaseUrl('https://openrouter.ai:8443/api/v1', ['openrouter.ai'], [local]));
+});
+
+test('local connection credentials remain encrypted and endpoint permission is rechecked', async t => {
+  const previous = process.env.TEAMWEAVE_LOCAL_MODEL_URLS;
+  t.after(() => {
+    if (previous === undefined) delete process.env.TEAMWEAVE_LOCAL_MODEL_URLS;
+    else process.env.TEAMWEAVE_LOCAL_MODEL_URLS = previous;
+  });
+  const local = 'http://192.168.1.76:1234/v1';
+  process.env.TEAMWEAVE_LOCAL_MODEL_URLS = local;
+  const app = buildApp({ dbPath: ':memory:' }); t.after(() => app.close());
+  const a = await register(app, 'local-model@example.test');
+  const created = await app.inject({ method: 'POST', url: '/api/model-connections', headers: { cookie: a.cookie }, payload: { ...profile, baseUrl: local } });
+  assert.equal(created.statusCode, 201, created.body);
+  assert.ok(!created.body.includes(secret));
+  const service = new ModelService(app.db, ':memory:');
+  assert.equal((await service.getApiKey(created.json().id, a.auth.organization.id))?.apiKey, secret);
+  delete process.env.TEAMWEAVE_LOCAL_MODEL_URLS;
+  await assert.rejects(service.getApiKey(created.json().id, a.auth.organization.id), /no longer allowed/);
+});
 async function repo() {
   const path = await realpath(await mkdtemp(join(tmpdir(), 'tw-model-')));
   execFileSync('git', ['init', '-b', 'main', path]);
@@ -96,6 +130,20 @@ test('API executor edits actual Git fixture, runs tests, snapshots and records r
   execFileSync(process.execPath, ['--test'], { cwd: path, env: { PATH: process.env.PATH } });
   const denied = await executeApiTask({ orgId: 'other', connectionId: c.id, modelService: service, input: { node: node(c.id), graph, incoming: [], assembledPrompt: '', signal: new AbortController().signal }, fetchFn: async () => { throw new Error('Should not fetch'); } });
   assert.equal(denied.status, 'failed');
+});
+
+test('API tasks can finish after more than eight model rounds', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const service = new ModelService(db, ':memory:');
+  const c = await service.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  const task = node(c.id); task.executor.maxIterations = 12;
+  let requests = 0;
+  const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService: service,
+    input: { node: task, graph: { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } }, incoming: [], assembledPrompt: 'Inspect', allowedRoots: [path], signal: new AbortController().signal },
+    fetchFn: async () => ++requests <= 9 ? response(null, [call('list_files', {}, `list-${requests}`)]) : response('Finished') });
+  assert.equal(requests, 10);
+  assert.equal(result.status, 'done');
 });
 
 test('file tools reject symlinks including dangling targets, secrets and report writes', async t => {
