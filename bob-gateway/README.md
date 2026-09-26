@@ -1,6 +1,6 @@
 # Bob Gateway
 
-A tiny local Node.js HTTP server that bridges the **TeamWeave UI** to the
+A tiny local Node.js HTTP server that connects the **TeamWeave UI** to the
 [IBM Bob Shell CLI](https://ibm.biz/bob-shell) (`bob run`). It lets "Bob-provider"
 nodes on the canvas execute real AI tasks via the local Bob agent instead of the
 built-in simulator.

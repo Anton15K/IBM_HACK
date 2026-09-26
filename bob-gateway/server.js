@@ -1,5 +1,5 @@
 /**
- * Bob Gateway — local bridge between TeamWeave UI and the `bob run` CLI.
+ * Bob Gateway — local HTTP server connecting TeamWeave UI to the `bob run` CLI.
  * Plain Node.js ESM, zero npm dependencies.
  *
  * Endpoints:

@@ -156,7 +156,7 @@ The app loads with **Acme Corp** pre-populated:
 
 - [x] **M1**: Canvas, spaces, nodes, mock runner, templates, persistence
 - [x] **M2**: Real LLM executors (OpenAI/Anthropic/Google/Bob), cross-team send, session replay, settings with BYO keys
-- [x] **M3**: Bob Gateway — local bridge between TeamWeave UI and `bob run` CLI (`bob-gateway/server.js`)
+- [x] **M3**: Bob Gateway — local HTTP server connecting TeamWeave UI to the `bob run` CLI (`bob-gateway/server.js`)
 - [ ] **M4**: Collaboration (multi-user, presence, comments)
 - [ ] **M5**: Persistent backend, auth, org management
 
