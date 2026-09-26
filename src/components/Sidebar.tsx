@@ -38,9 +38,9 @@ export default function Sidebar() {
           ← Back to parent
         </button>
       )}
-      <div className="text-muted uppercase text-[10px] tracking-widest">
+      <h2 className="text-muted uppercase text-[10px] tracking-widest">
         {state.selectedTeamId ? 'Team projects' : 'Departments & teams'}
-      </div>
+      </h2>
       {!state.selectedTeamId &&
         state.teams
           .filter((t) => t.parentId === state.navigationId)
@@ -56,6 +56,7 @@ export default function Sidebar() {
       {state.selectedTeamId && (
         <>
           <select
+            aria-label="Project"
             className="form-input"
             value={state.selectedGraphId ?? ''}
             onChange={(e) => state.selectGraph(e.target.value)}
