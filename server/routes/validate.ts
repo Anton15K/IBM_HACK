@@ -149,12 +149,12 @@ export function validateExecutor(v: unknown): string | null {
   if (e.connectionId !== undefined && typeof e.connectionId !== 'string')
     return 'executor.connectionId must be a string';
 
-  // maxOutputTokens (optional; 64–4096)
+  // maxOutputTokens (optional; 64–65536)
   if (e.maxOutputTokens !== undefined) {
     if (!Number.isInteger(e.maxOutputTokens) ||
         (e.maxOutputTokens as number) < 64 ||
-        (e.maxOutputTokens as number) > 4096)
-      return 'executor.maxOutputTokens must be an integer between 64 and 4096';
+        (e.maxOutputTokens as number) > 65536)
+      return 'executor.maxOutputTokens must be an integer between 64 and 65536';
   }
 
   return null;

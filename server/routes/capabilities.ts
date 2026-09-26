@@ -27,7 +27,7 @@ export function makeCapabilitiesRoutes(opts: CapabilitiesOptions = {}) {
       return reply.send({
         providers: ['bob', 'mock', 'api'],
         modelHosts: opts.modelHosts ?? ['api.z.ai', 'api.openai.com'],
-        apiLimits: { maxOutputTokens: 4096, maxIterations: 8 },
+        apiLimits: { maxOutputTokens: 65536, maxIterations: 8 },
         outputModes: ['report', 'patch'],
         bobConfigured,
         workspaceRootsConfigured,
