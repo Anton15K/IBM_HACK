@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TeamWeave is a canvas for governed agent teamwork: team boards, coding workflows, structured handoffs and human review.">
+  <meta name="theme-color" content="#0c1018">
+  <title>TeamWeave — a shared canvas for agent teamwork</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0c1018; --panel:#131a26; --line:#293447; --text:#edf2fa; --muted:#a8b5c9; --accent:#a4efc8; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:inherit; text-underline-offset:4px; }
+    a:hover { color:var(--accent); }
+    a:focus-visible { outline:3px solid var(--accent); outline-offset:5px; }
+    .skip { position:absolute; left:20px; top:-80px; padding:12px; background:var(--panel); z-index:2; }
+    .skip:focus { top:12px; }
+    .wrap { width:min(1120px,calc(100% - 48px)); margin:auto; }
+    header { border-bottom:1px solid var(--line); }
+    nav { min-height:88px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .brand { text-decoration:none; font-size:23px; font-weight:750; letter-spacing:-.8px; }
+    .brand span { color:var(--accent); }
+    .nav-links { display:flex; flex-wrap:wrap; gap:24px; font-size:14px; }
+    .nav-links a { text-decoration:none; }
+    .hero { padding:88px 0 64px; }
+    .eyebrow { color:var(--accent); font-size:12px; letter-spacing:.15em; text-transform:uppercase; font-weight:650; }
+    h1 { max-width:970px; margin:20px 0 24px; font-size:clamp(40px,6.4vw,76px); line-height:1.08; letter-spacing:-.055em; font-weight:650; }
+    h1 span { color:var(--accent); }
+    h2 { margin:0 0 14px; font-size:clamp(27px,3.5vw,40px); line-height:1.2; letter-spacing:-.035em; font-weight:650; }
+    h3 { margin:0 0 10px; font-size:20px; line-height:1.35; }
+    p { margin:0 0 18px; }
+    .intro { max-width:710px; color:var(--muted); font-size:20px; }
+    .actions { display:flex; gap:14px; flex-wrap:wrap; margin:30px 0 18px; }
+    .button { display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--line); padding:12px 22px; border-radius:8px; text-decoration:none; font-size:15px; font-weight:650; }
+    .button.primary { background:var(--accent); color:#102319; border-color:var(--accent); }
+    .button.primary:hover { background:#c5f8de; }
+    .note { color:var(--muted); font-size:14px; }
+    section { padding:58px 0; border-top:1px solid var(--line); scroll-margin-top:24px; }
+    .section-intro { max-width:730px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:28px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:26px; min-width:0; }
+    .card p { color:var(--muted); margin-bottom:0; }
+    .step { display:block; color:var(--accent); font-size:13px; font-variant-numeric:tabular-nums; margin-bottom:25px; }
+    .recording { display:grid; place-items:center; min-height:260px; padding:40px 24px; margin-top:28px; border:1px dashed #44526a; border-radius:12px; background:linear-gradient(145deg,#151f2c,#101621); text-align:center; }
+    .recording p { max-width:570px; color:var(--muted); }
+    .badge { display:inline-block; color:var(--accent); border:1px solid #426451; border-radius:99px; padding:4px 12px; margin-bottom:16px; font-size:12px; }
+    .capture { border-style:dashed; background:transparent; }
+    .capture .placeholder { color:var(--muted); font-size:12px; letter-spacing:.07em; text-transform:uppercase; margin-bottom:18px; }
+    .setup { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; margin-top:28px; }
+    .setup h3 { font-size:16px; }
+    pre { overflow-x:auto; padding:20px; margin:12px 0 24px; border:1px solid var(--line); border-radius:10px; background:#080c12; font-size:13px; line-height:1.8; }
+    code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .setup p { color:var(--muted); }
+    footer { border-top:1px solid var(--line); padding:28px 0 40px; color:var(--muted); font-size:13px; }
+    .footer-content { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+    @media (max-width:720px) { .grid,.setup { grid-template-columns:1fr; } .hero { padding:52px 0 40px; } section { padding:40px 0; } .intro { font-size:18px; } nav { align-items:flex-start; flex-direction:column; gap:12px; padding:20px 0; } .nav-links { gap:18px; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header><nav class="wrap" aria-label="Main navigation">
+    <a class="brand" href="#main">Team<span>Weave</span></a>
+    <div class="nav-links"><a href="#workflow">How it works</a><a href="#demo">Demo</a><a href="#run">Run locally</a><a href="https://github.com/Anton15K/IBM_HACK">GitHub ↗</a></div>
+  </nav></header>
+  <main id="main" class="wrap">
+    <div class="hero">
+      <div class="eyebrow">IBM Bob Hackathon · Local application preview</div>
+      <h1>Agent teamwork.<br><span>Shaped like your organization.</span></h1>
+      <p class="intro">Give every team its own board. Connect coding tasks, pass structured results between agents, and keep human review in the workflow.</p>
+      <div class="actions"><a class="button primary" href="#run">Run the local preview</a><a class="button" href="https://github.com/Anton15K/IBM_HACK">Explore the source ↗</a></div>
+      <p class="note">This is the project overview. The full application runs locally with its backend.</p>
+    </div>
+    <section id="workflow" aria-labelledby="workflow-title">
+      <div class="eyebrow">A canvas for governed agent teamwork</div>
+      <h2 id="workflow-title">From isolated prompts to a shared workflow.</h2>
+      <p class="section-intro">A node is a task with a prompt, an executor and a project context. Connections carry summaries, results, commands and artifacts into the next task.</p>
+      <div class="grid">
+        <article class="card"><span class="step">01 / ORGANIZE</span><h3>Team boards, real projects</h3><p>Navigate departments and teams. Bind a project graph to an existing Git workspace, branch and revision.</p></article>
+        <article class="card"><span class="step">02 / CONNECT</span><h3>Tasks that build on each other</h3><p>Connect implementation, analysis and test tasks. Choose an executor and reuse node templates instead of copying entire conversations.</p></article>
+        <article class="card"><span class="step">03 / REVIEW</span><h3>Context that survives the handoff</h3><p>Pause at human review gates, request rework, and send a result to another team's inbox with its source context.</p></article>
+      </div>
+    </section>
+    <section id="demo" aria-labelledby="demo-title">
+      <h2 id="demo-title">See the work, not just the final answer.</h2>
+      <p class="section-intro">The local application records execution attempts and Git workspace snapshots. Mock tasks let you explore the workflow without making model calls.</p>
+      <!-- TODO: replace this placeholder with the actual recorded walkthrough. -->
+      <div class="recording"><div><span class="badge">Recording pending</span><h3>A walkthrough is on the way.</h3><p>The video has not been published yet. You can inspect the source or run the local preview below.</p><a href="#run">Open the local setup instructions ↓</a></div></div>
+      <div class="grid" aria-label="Planned product screenshots">
+        <!-- TODO: add real captures from the running application; these are placeholders. -->
+        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Organization &amp; team boards</h3><p>A view of the team hierarchy and separate project boards.</p></article>
+        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Task prompts &amp; dependencies</h3><p>A view of a task's instructions, inputs and project binding.</p></article>
+        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Review &amp; execution history</h3><p>A view of a review gate and the results behind an attempt.</p></article>
+      </div>
+    </section>
+    <section id="run" aria-labelledby="run-title">
+      <h2 id="run-title">Bring a small project. Start locally.</h2>
+      <p class="section-intro">Requires Node.js 24+, npm and Git. These instructions use a pinned preview revision that includes the authenticated backend and API model connections.</p>
+      <div class="setup">
+        <div><h3>1. Get the preview</h3><pre><code>git clone https://github.com/Anton15K/IBM_HACK.git
+cd IBM_HACK
+git checkout 66a89853325e10f7636160117856dba65646a4f0
+npm ci</code></pre><p>Use an existing, trusted Git project as your agent workspace. Replace the example path with the parent directory containing that project.</p></div>
+        <div><h3>2. Start the backend — terminal 1</h3><pre><code>TEAMWEAVE_WORKSPACE_ROOTS=/absolute/path/to/projects npm run dev:server</code></pre><h3>3. Start the frontend — terminal 2</h3><pre><code>npm run dev</code></pre><p>Open <a href="http://localhost:5173/IBM_HACK/">localhost:5173/IBM_HACK/</a>, register an organization, and create a team and project.</p></div>
+      </div>
+      <p class="note">Start with Mock for a simulated run. Real agent execution needs your own configured provider and available quota. API model support is implemented; a successful live API coding run is not claimed here. The local runner is intended for trusted projects, not untrusted code.</p>
+      <a class="button" href="https://github.com/Anton15K/IBM_HACK/blob/66a89853325e10f7636160117856dba65646a4f0/README.md">Read the full setup and limitations ↗</a>
+    </section>
+  </main>
+  <footer><div class="wrap footer-content"><span>TeamWeave · Built for the IBM Bob Hackathon</span><span>Open source · <a href="https://github.com/Anton15K/IBM_HACK/blob/main/LICENSE">MIT license</a></span></div></footer>
+</body>
+</html>
