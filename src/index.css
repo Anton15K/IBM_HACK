@@ -81,6 +81,8 @@
 
 /* Minimap */
 .react-flow__minimap {
+  background: #111725 !important;
+  border: 1px solid #242C3D;
   border-radius: 14px !important;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);

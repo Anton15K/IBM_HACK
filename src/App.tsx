@@ -56,7 +56,7 @@ export default function App() {
           <h1 id="current-view-heading" className="sr-only">
             {state.selectedTeamId
               ? `${state.teams.find(t => t.id === state.selectedTeamId)?.name ?? 'Team'} — ${state.graphContexts.find(g => g.id === state.selectedGraphId)?.name ?? 'Task board'}`
-              : state.teams.find(t => t.id === state.navigationId)?.name ?? 'Company overview'}
+              : state.teams.find(t => t.id === state.navigationId)?.name ?? state.auth?.organization.name ?? 'Departments & teams'}
           </h1>
           <FlowCanvas key={state.navigationId ?? 'company'} />
         </main>
