@@ -3,6 +3,7 @@ import { useStore, sessionRequest } from '../store';
 import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
 import { assemblePrompt } from '../prompt';
 import { previewInputs } from '../prompt-preview';
+import { outputPresentation } from '../output-presentation';
 import { statusColor } from '../utils/colors';
 import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
@@ -18,6 +19,7 @@ interface ModelDescriptor {
 
 interface Attempt {
   id: string;
+  nodeId: string;
   nodeVersion: number;
   status: string;
   startedAt: string;
@@ -167,6 +169,7 @@ export default function Inspector() {
   const graph = state.graphContexts.find((g) => g.id === node.graphId);
   const update = state.updateNode;
   const color = statusColor(node.status, node.priority);
+  const displayedOutput = outputPresentation(node, attempts);
   const annotate = (field: 'refinements' | 'comments') => {
     const text = window.prompt(
       field === 'refinements' ? 'Refinement' : 'Comment',
@@ -642,6 +645,14 @@ export default function Inspector() {
             <h3 className="text-muted uppercase text-[10px] mb-2">
               Output / status
             </h3>
+            <p className="text-muted text-[11px] mb-2">
+              Current status: {node.status.replace(/_/g, ' ')}
+            </p>
+            {displayedOutput.label && (
+              <p className="text-warn text-[11px] mb-2 break-words">
+                {displayedOutput.label}
+              </p>
+            )}
             <pre className="whitespace-pre-wrap break-words">
               {node.output.summary || 'No output yet'}
             </pre>
