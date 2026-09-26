@@ -3,6 +3,7 @@ import { useStore, sessionRequest } from '../store';
 import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
 import { assemblePrompt, type IncomingEdge } from '../prompt';
 import { statusColor } from '../utils/colors';
+import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
 import AssembledPromptModal from './AssembledPromptModal';
 import WorkspaceEditor from './WorkspaceEditor';
@@ -824,7 +825,7 @@ export default function Inspector() {
           </button>
           <button
             className="small-button w-full"
-            onClick={() => void state.removeNode(node.id)}
+            onClick={() => void requestTaskDeletion(node, (message) => window.confirm(message), state.removeNode)}
           >
             Delete task
           </button>
