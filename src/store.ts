@@ -7,7 +7,7 @@ import {
   templateDefinition,
   type Auth,
 } from './client-helpers';
-import type { WorkerNode, GraphContext, NodeTemplate, Project } from './types';
+import type { WorkerNode, GraphContext, NodeTemplate, Project, Team } from './types';
 export interface Capabilities {
   providers: string[];
   outputModes: string[];
@@ -58,7 +58,17 @@ interface State extends Project {
     patch: Partial<WorkerNode> | { workspace: null },
   ) => void;
   updateGraph: (id: string, patch: Partial<GraphContext>) => void;
-  createNode: (type?: WorkerNode['type']) => Promise<void>;
+  createNode: (type?: WorkerNode['type'], position?: { x: number; y: number }) => Promise<void>;
+  createTeam: (
+    name: string,
+    kind: 'department' | 'team',
+    parentId?: string | null,
+    position?: { x: number; y: number },
+  ) => Promise<Team | null>;
+  updateTeam: (
+    id: string,
+    patch: { name?: string; currentTaskLabel?: string; space?: Partial<Team['space']> },
+  ) => void;
   removeNode: (id: string) => Promise<void>;
   addEdge: (from: string, to: string) => void;
   removeEdge: (from: string, to: string) => void;
@@ -159,6 +169,9 @@ function applyProject(project: Project & { revision?: number }) {
   const state = useStore.getState();
   useStore.setState({
     ...project,
+    teams: project.teams.map((t) =>
+      mergePatch(t, authorOverlay(`teams/${t.id}`)),
+    ),
     nodes: project.nodes.map((n) =>
       mergePatch(n, authorOverlay(`nodes/${n.id}`)),
     ),
@@ -213,7 +226,7 @@ async function save(key: string): Promise<void> {
   const promise = (async () => {
     try {
       const result = await sessionRequest<
-        (WorkerNode | GraphContext) & { revision?: number }
+        (WorkerNode | GraphContext | Team) & { revision?: number }
       >(`/${key}`, 'PATCH', patch);
       if (current !== generation) return;
       const fresh = (result.revision ?? revision) >= revision;
@@ -230,13 +243,21 @@ async function save(key: string): Promise<void> {
                   : n,
               ),
             }
-          : {
-              graphContexts: s.graphContexts.map((g) =>
-                g.id === id
-                  ? mergePatch(result as GraphContext, authorOverlay(key))
-                  : g,
-              ),
-            },
+          : kind === 'teams'
+            ? {
+                teams: s.teams.map((t) =>
+                  t.id === id
+                    ? mergePatch(result as Team, authorOverlay(key))
+                    : t,
+                ),
+              }
+            : {
+                graphContexts: s.graphContexts.map((g) =>
+                  g.id === id
+                    ? mergePatch(result as GraphContext, authorOverlay(key))
+                    : g,
+                ),
+              },
       );
     } catch (error) {
       if (current !== generation) return;
@@ -441,7 +462,7 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
       });
       queue(`graphs/${id}`, patch);
     },
-    createNode: async (type = 'worker') => {
+    createNode: async (type = 'worker', position?: { x: number; y: number }) => {
       const { selectedTeamId: teamId, selectedGraphId: graphId } = get();
       if (!teamId || !graphId || !get().canEdit(teamId)) return;
       await action('createNode', async () => {
@@ -450,7 +471,7 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
           graphId,
           name: type === 'gate' ? 'Human review' : 'New task',
           type,
-          position: {
+          position: position ?? {
             x:
               80 +
               get().nodes.filter((n) => n.graphId === graphId).length * 240,
@@ -463,6 +484,53 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
         requireSession(current);
         get().selectNode(node.id);
       });
+    },
+    createTeam: async (name, kind, parentId, position) => {
+      if (get().auth?.role !== 'admin') return null;
+      const current = generation;
+      let created: Team | null = null;
+      await action('createTeam', async () => {
+        const body: Record<string, unknown> = { name, kind };
+        if (parentId !== undefined) body.parentId = parentId;
+        if (position !== undefined) body.space = { x: position.x, y: position.y };
+        const team = await sessionRequest<Team & { revision?: number }>(
+          '/teams',
+          'POST',
+          body,
+        );
+        if (current === generation) created = team;
+      });
+      return current === generation ? created : null;
+    },
+    updateTeam: (id, patch) => {
+      const role = effectiveRole(get().auth, get().teams, id);
+      if (!role || role === 'viewer') return;
+      if (patch.name !== undefined && role !== 'admin') return;
+      const team = get().teams.find((t) => t.id === id);
+      if (!team) return;
+      const spacePatch: Partial<Team['space']> = patch.space ?? {};
+      const mergedSpace: Team['space'] = {
+        x: spacePatch.x ?? team.space.x,
+        y: spacePatch.y ?? team.space.y,
+        w: spacePatch.w ?? team.space.w,
+        h: spacePatch.h ?? team.space.h,
+      };
+      const optimistic: Partial<Team> = {};
+      if (patch.name !== undefined) optimistic.name = patch.name;
+      if (patch.currentTaskLabel !== undefined)
+        optimistic.currentTaskLabel = patch.currentTaskLabel;
+      if (patch.space !== undefined) optimistic.space = mergedSpace;
+      set({
+        teams: get().teams.map((t) =>
+          t.id === id ? mergePatch(t, optimistic) : t,
+        ),
+      });
+      const serverPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) serverPatch.name = patch.name;
+      if (patch.currentTaskLabel !== undefined)
+        serverPatch.currentTaskLabel = patch.currentTaskLabel;
+      if (patch.space !== undefined) serverPatch.space = spacePatch;
+      queue(`teams/${id}`, serverPatch);
     },
     removeNode: (id) =>
       action(id, () => sessionRequest(`/nodes/${id}`, 'DELETE')),
