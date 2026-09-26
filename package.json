@@ -10,7 +10,8 @@
     "gateway": "node bob-gateway/server.js",
     "dev:server": "tsx server/index.ts",
     "test:server": "tsx --test server/*.test.ts",
-    "typecheck:server": "tsc --noEmit -p tsconfig.server.json"
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "test:client": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

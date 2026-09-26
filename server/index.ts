@@ -12,3 +12,17 @@ app.listen({ port: PORT, host: HOST }, (err: Error | null, address: string) => {
   }
   console.log(`TeamWeave server listening at ${address}`);
 });
+
+let closing = false;
+async function shutdown() {
+  if (closing) return;
+  closing = true;
+  try {
+    await app.close();
+  } catch (error) {
+    app.log.error(error);
+    process.exitCode = 1;
+  }
+}
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

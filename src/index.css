@@ -124,3 +124,12 @@
 .react-flow__node.selected .react-flow__resize-control {
   display: none;
 }
+
+.form-input { width:100%; background:#111725; border:1px solid #242C3D; border-radius:8px; padding:7px 10px; color:#E4EAF4; font-size:12px; outline:none; }
+.form-input:focus { border-color:#5B8CFF; }
+.action-button,.small-button { border:1px solid #242C3D; border-radius:8px; padding:6px 10px; font-size:11px; }
+.action-button { color:#5B8CFF; background:#5B8CFF22; border-color:#5B8CFF44; }
+.small-button { background:#111725; color:#B0BAD0; }
+button:disabled,fieldset:disabled { opacity:.5; }
+.modal-shade { position:fixed; inset:0; z-index:50; background:#0009; backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; }
+.modal-panel { background:#0F1521; color:#E4EAF4; border:1px solid #242C3D; border-radius:20px; padding:24px; width:480px; max-width:95vw; font-size:12px; }

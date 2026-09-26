@@ -7,12 +7,13 @@ interface Props {
 
 export default function AssembledPromptModal({ prompt, onClose }: Props) {
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(prompt).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => setError('Could not copy to clipboard'));
   };
 
   return (
@@ -35,6 +36,7 @@ export default function AssembledPromptModal({ prompt, onClose }: Props) {
           className="flex-1 overflow-y-auto p-5"
           style={{ scrollbarWidth: 'thin', scrollbarColor: '#242C3D transparent' }}
         >
+          {error && <p role="alert" className="text-err text-xs">{error}</p>}
           <pre className="text-ink text-[11px] font-mono whitespace-pre-wrap leading-relaxed">{prompt}</pre>
         </div>
       </div>

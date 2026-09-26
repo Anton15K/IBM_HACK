@@ -1,645 +1,745 @@
-import { useState } from 'react';
-import { useStore } from '../store';
-import {
-  statusColor,
-  statusLabel,
-  priorityColor,
-  PROVIDER_LABELS,
-  NODE_TYPE_LABELS,
-} from '../utils/colors';
-import type { NodeStatus, Priority, Provider, HistoryEntry } from '../types';
+import { useEffect, useState } from 'react';
+import { useStore, sessionRequest } from '../store';
+import type { WorkerNode, WorkspaceSnapshot } from '../types';
+import { assemblePrompt, type IncomingEdge } from '../prompt';
+import { statusColor } from '../utils/colors';
 import SendToTeamModal from './SendToTeamModal';
-import ReplayModal from './ReplayModal';
 import AssembledPromptModal from './AssembledPromptModal';
-import { assemblePrompt } from '../executors/registry';
-
-const ALL_STATUSES: NodeStatus[] = [
-  'draft', 'ready', 'queued', 'running', 'blocked', 'done', 'failed', 'rework', 'needs_approval',
-];
-const ALL_PRIORITIES: Priority[] = ['low', 'normal', 'high', 'critical'];
-const ALL_PROVIDERS: Provider[] = ['bob', 'openai', 'anthropic', 'google', 'mock'];
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-4">
-      <div className="text-muted text-[10px] font-semibold uppercase tracking-widest mb-2">{title}</div>
-      {children}
-    </div>
-  );
+import WorkspaceEditor from './WorkspaceEditor';
+interface Attempt {
+  id: string;
+  nodeVersion: number;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  taskId: string | null;
+  sessionCosts: number | null;
+  assembledPrompt: string;
+  error?: string;
+  output?: WorkerNode['output'];
+  workspaceBefore: WorkspaceSnapshot | null;
+  workspaceAfter: WorkspaceSnapshot | null;
 }
-
-function ChipInput({
-  value,
+interface Handoff {
+  id: string;
+  recipientTeamId: string;
+  recipientNodeId: string;
+  sourceAttemptId?: string;
+  recipient: {
+    id: string;
+    name: string;
+    status: string;
+    summary: string;
+    attemptId?: string;
+  } | null;
+}
+function ListInput({
+  values,
   onChange,
-  placeholder,
 }: {
-  value: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
+  values: string[];
+  onChange: (values: string[]) => void;
 }) {
-  const [input, setInput] = useState('');
-
-  const add = () => {
-    const trimmed = input.trim();
-    if (trimmed && !value.includes(trimmed)) {
-      onChange([...value, trimmed]);
-    }
-    setInput('');
-  };
-
+  const [raw, setRaw] = useState(values.join(', '));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setRaw(values.join(', '));
+  }, [values, focused]);
   return (
-    <div className="flex flex-wrap gap-1 mb-1">
-      {value.map((chip) => (
-        <span
-          key={chip}
-          className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-line text-ink text-[11px]"
-        >
-          {chip}
-          <button
-            onClick={() => onChange(value.filter((v) => v !== chip))}
-            className="text-muted hover:text-err ml-0.5"
-          >
-            ×
-          </button>
-        </span>
-      ))}
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(); }
-        }}
-        onBlur={add}
-        placeholder={placeholder}
-        className="bg-transparent text-ink text-[11px] outline-none placeholder-muted w-24 min-w-0"
-      />
+    <input
+      className="form-input mt-1"
+      value={raw}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setRaw(e.target.value)}
+      onBlur={() => {
+        const parsed = raw
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (JSON.stringify(parsed) !== JSON.stringify(values)) onChange(parsed);
+        setFocused(false);
+      }}
+    />
+  );
+}
+function Snapshot({
+  title,
+  value,
+}: {
+  title: string;
+  value: WorkspaceSnapshot | null;
+}) {
+  return value ? (
+    <div className="bg-card border border-line p-2 rounded-lg break-all text-[10px]">
+      <p>
+        {title}: {value.path}
+      </p>
+      <p>
+        {value.branch} @ {value.commitSha} {value.dirty ? '· dirty' : '· clean'}
+      </p>
     </div>
+  ) : (
+    <p className="text-muted text-[10px]">{title}: not recorded</p>
   );
 }
-
-function HistoryRow({
-  entry,
-  nodeName,
-}: {
-  entry: HistoryEntry;
-  nodeName: string;
-}) {
-  const [showReplay, setShowReplay] = useState(false);
-
-  return (
-    <>
-      <div className="flex items-center gap-2 py-1.5 border-b border-line/50 last:border-0">
-        <div
-          className="w-1.5 h-1.5 rounded-full shrink-0"
-          style={{ backgroundColor: entry.status === 'done' ? '#34D399' : '#F87171' }}
-        />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-ink text-[11px] font-medium capitalize">{entry.provider}</span>
-            <span className="text-muted text-[10px]">·</span>
-            <span className="text-muted text-[10px]">{(entry.durationMs / 1000).toFixed(1)}s</span>
-            {entry.simulated && (
-              <span className="px-1 py-px rounded text-[9px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 leading-none">
-                simulated
-              </span>
-            )}
-          </div>
-          <div className="text-muted text-[10px]">
-            {new Date(entry.ts).toLocaleString()}
-          </div>
-        </div>
-        <button
-          onClick={() => setShowReplay(true)}
-          className="text-[10px] px-1.5 py-0.5 rounded bg-line hover:bg-line/80 text-ink transition-colors shrink-0"
-        >
-          ▶ Replay
-        </button>
-      </div>
-      {showReplay && (
-        <ReplayModal entry={entry} nodeName={nodeName} onClose={() => setShowReplay(false)} />
-      )}
-    </>
-  );
-}
-
 export default function Inspector() {
-  const selectedNodeId = useStore((s) => s.selectedNodeId);
-  const nodes = useStore((s) => s.nodes);
-  const graphContexts = useStore((s) => s.graphContexts);
-  const updateNode = useStore((s) => s.updateNode);
-  const selectNode = useStore((s) => s.selectNode);
-  const runNode = useStore((s) => s.runNode);
-  const approveGate = useStore((s) => s.approveGate);
-  const requestChanges = useStore((s) => s.requestChanges);
-  const addTemplate = useStore((s) => s.addTemplate);
-
-  const [showSendModal, setShowSendModal] = useState(false);
-  const [showPromptModal, setShowPromptModal] = useState(false);
-
-  const node = nodes.find((n) => n.id === selectedNodeId);
-  if (!node) return null;
-
-  // Status is primary signal; critical priority shows separately as stripe/icon on card
-  const color = statusColor(node.status, 'normal');
-
-  const graphContext = graphContexts.find((g) => g.id === node.graphId);
-
-  const getAssembledPrompt = () => {
-    if (!graphContext) return node.prompt.task;
-    const incoming = node.inputs
+  const state = useStore();
+  const node = state.nodes.find((n) => n.id === state.selectedNodeId)!;
+  const reworkTargets = state.nodes.filter(
+    (n) =>
+      n.type === 'worker' &&
+      node.inputs.some((i) => i.enabled && i.fromNodeId === n.id),
+  );
+  const [override, setOverride] = useState(!!node.workspace);
+  const [send, setSend] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [handoffs, setHandoffs] = useState<Handoff[]>([]);
+  const [detail, setDetail] = useState<Attempt | null>(null);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [target, setTarget] = useState(reworkTargets[0]?.id ?? '');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      try {
+        const [a, h] = await Promise.all([
+          sessionRequest<Attempt[]>(`/nodes/${node.id}/attempts`),
+          sessionRequest<Handoff[]>(`/nodes/${node.id}/handoffs`),
+        ]);
+        if (!disposed) {
+          setAttempts(a);
+          setHandoffs(h);
+          setError('');
+        }
+      } catch (err) {
+        if (!disposed) setError((err as Error).message);
+      }
+      if (!disposed) timer = setTimeout(load, 1500);
+    };
+    void load();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [node.id]);
+  const editable = state.canEdit(node.teamId);
+  const busy = state.busy.includes(node.id);
+  const graph = state.graphContexts.find((g) => g.id === node.graphId);
+  const update = state.updateNode;
+  const color = statusColor(node.status, node.priority);
+  const annotate = (field: 'refinements' | 'comments') => {
+    const text = window.prompt(
+      field === 'refinements' ? 'Refinement' : 'Comment',
+    );
+    if (text?.trim())
+      update(node.id, {
+        prompt: {
+          ...node.prompt,
+          [field]: [
+            ...node.prompt[field],
+            {
+              ts: new Date().toISOString(),
+              author: state.auth!.user.email,
+              text,
+            },
+          ],
+        },
+      });
+  };
+  const previewPrompt = () => {
+    if (!graph) return;
+    const incoming: IncomingEdge[] = node.inputs
       .filter((i) => i.enabled)
-      .map((i) => {
-        const upstream = nodes.find((n) => n.id === i.fromNodeId);
-        if (!upstream) return null;
-        return {
-          summary_prev: upstream.output.summary,
-          results: upstream.output.results,
-          commands: upstream.output.commands,
-          artifacts: upstream.output.artifacts,
-        };
-      })
-      .filter(Boolean) as import('../types').EdgeContract[];
-    return assemblePrompt(node, graphContext, incoming);
+      .flatMap((i) => {
+        const source = state.nodes.find((n) => n.id === i.fromNodeId);
+        return source
+          ? [
+              {
+                fromNodeId: source.id,
+                attemptId: source.currentAttemptId,
+                ...source.output,
+              },
+            ]
+          : [];
+      });
+    if (node.inboxMeta?.sourceOutput)
+      incoming.push({
+        fromNodeId: node.inboxMeta.sourceNodeId,
+        attemptId: node.inboxMeta.sourceAttemptId,
+        ...node.inboxMeta.sourceOutput,
+      });
+    setPreview(assemblePrompt(node, graph, incoming, null));
   };
-
-  const addRefinement = () => {
-    const text = prompt('Enter refinement text:');
-    if (!text) return;
-    updateNode(node.id, {
-      prompt: {
-        ...node.prompt,
-        refinements: [
-          ...node.prompt.refinements,
-          { ts: new Date().toISOString(), author: 'me@acme.com', text },
-        ],
-      },
-    });
-  };
-
-  const addComment = () => {
-    const text = prompt('Enter comment:');
-    if (!text) return;
-    updateNode(node.id, {
-      prompt: {
-        ...node.prompt,
-        comments: [
-          ...node.prompt.comments,
-          { ts: new Date().toISOString(), author: 'me@acme.com', text },
-        ],
-      },
-    });
-  };
-
-  const handleSaveAsTemplate = () => {
-    const name = prompt('Template name:', node.name);
-    if (!name) return;
-    addTemplate({
-      id: `tpl-custom-${Date.now()}`,
-      name,
-      description: node.prompt.task.slice(0, 80),
-      isBuiltIn: false,
-      defaults: {
-        type: node.type,
-        priority: node.priority,
-        prompt: { ...node.prompt },
-        executor: { ...node.executor },
-        context: { ...node.context },
-      },
-    });
-    alert('Template saved!');
-  };
-
-  const handleConvertToWorker = () => {
-    updateNode(node.id, {
-      type: 'worker',
-      status: 'draft',
-      inputs: [],
-      inboxMeta: undefined,
-    });
-  };
-
-  const upstreamId = node.inputs[0]?.fromNodeId;
-
-  const history = node.history ?? [];
-
   return (
     <>
-      <aside
-        className="w-80 bg-panel border-l border-line flex flex-col overflow-hidden shrink-0"
-        style={{ zIndex: 10 }}
-      >
-        {/* Header */}
+      <aside className="w-80 bg-panel border-l border-line flex flex-col overflow-hidden shrink-0">
         <div
-          className="flex items-center justify-between px-4 py-3 border-b border-line"
-          style={{ borderTopColor: color, borderTopWidth: 2 }}
+          className="flex justify-between px-4 py-3 border-b border-line"
+          style={{ borderTop: `2px solid ${color}` }}
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-            {/* Inbox icon for inbox nodes */}
-            {node.type === 'inbox' && (
-              <span className="text-[12px]">📥</span>
-            )}
-            <span className="text-ink text-sm font-semibold truncate">{node.name}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Source team badge for cross-team inboxes */}
-            {node.inboxMeta && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-accent/20 text-accent border border-accent/30">
-                cross-team
-              </span>
-            )}
-            <button
-              onClick={() => selectNode(null)}
-              className="text-muted hover:text-ink ml-1 shrink-0"
-            >
-              ×
-            </button>
-          </div>
+          <span className="text-sm font-semibold truncate">{node.name}</span>
+          <button onClick={() => state.selectNode(null)}>×</button>
         </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#242C3D transparent' }}>
-          {/* Identity */}
-          <Section title="Identity">
-            <div className="space-y-2">
-              <div>
-                <label className="text-muted text-[10px]">Name</label>
-                <input
-                  value={node.name}
-                  onChange={(e) => updateNode(node.id, { name: e.target.value })}
-                  className="w-full bg-card border border-line rounded-lg px-2.5 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent"
-                />
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-muted text-[10px]">Status</label>
-                  <select
-                    value={node.status}
-                    onChange={(e) => updateNode(node.id, { status: e.target.value as NodeStatus })}
-                    className="w-full bg-card border border-line rounded-lg px-2 py-1.5 text-xs mt-0.5 outline-none focus:border-accent"
-                    style={{ color }}
-                  >
-                    {ALL_STATUSES.map((s) => (
-                      <option key={s} value={s}>{statusLabel(s)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-muted text-[10px]">Priority</label>
-                  <select
-                    value={node.priority}
-                    onChange={(e) => updateNode(node.id, { priority: e.target.value as Priority })}
-                    className="w-full bg-card border border-line rounded-lg px-2 py-1.5 text-xs mt-0.5 outline-none focus:border-accent"
-                    style={{ color: priorityColor(node.priority) }}
-                  >
-                    {ALL_PRIORITIES.map((p) => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </Section>
-
-          {/* Inbox cross-team meta */}
-          {node.inboxMeta && (
-            <Section title="Cross-Team Origin">
-              <div className="bg-card border border-line rounded-lg p-2.5 space-y-1 text-xs">
-                <div>
-                  <span className="text-muted text-[10px]">Source node ID: </span>
-                  <span className="text-ink font-mono text-[10px]">{node.inboxMeta.sourceNodeId}</span>
-                </div>
-                {node.inboxMeta.message && (
-                  <div>
-                    <div className="text-muted text-[10px] mb-0.5">Message</div>
-                    <div className="text-ink text-[11px] italic">"{node.inboxMeta.message}"</div>
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Prompt */}
-          <Section title="Prompt">
-            <textarea
-              value={node.prompt.task}
-              onChange={(e) => updateNode(node.id, { prompt: { ...node.prompt, task: e.target.value } })}
-              rows={4}
-              className="w-full bg-card border border-line rounded-lg px-2.5 py-2 text-ink text-xs outline-none focus:border-accent resize-none"
-              placeholder="Task description…"
-            />
-            <div className="flex gap-2 mt-1.5 flex-wrap">
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
+          <p style={{ color }}>
+            {node.status} · definition version {node.version}
+            {busy ? ' · saving / submitting' : ''}
+          </p>
+          <fieldset disabled={!editable} className="space-y-3">
+            <label>
+              Name
+              <input
+                className="form-input mt-1"
+                value={node.name}
+                onChange={(e) => update(node.id, { name: e.target.value })}
+              />
+            </label>
+            <label>
+              Type
+              <select
+                className="form-input mt-1"
+                value={node.type}
+                onChange={(e) =>
+                  update(node.id, {
+                    type: e.target.value as WorkerNode['type'],
+                  })
+                }
+              >
+                {[
+                  'worker',
+                  'gate',
+                  ...(node.type === 'inbox' ? ['inbox'] : []),
+                ].map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Priority
+              <select
+                className="form-input mt-1"
+                value={node.priority}
+                onChange={(e) =>
+                  update(node.id, {
+                    priority: e.target.value as WorkerNode['priority'],
+                  })
+                }
+              >
+                {['low', 'normal', 'high', 'critical'].map((p) => (
+                  <option key={p}>{p}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Task prompt
+              <textarea
+                rows={5}
+                className="form-input mt-1"
+                value={node.prompt.task}
+                onChange={(e) =>
+                  update(node.id, {
+                    prompt: { ...node.prompt, task: e.target.value },
+                  })
+                }
+              />
+            </label>
+            <div className="flex gap-3">
               <button
-                onClick={addRefinement}
-                className="text-[10px] text-accent hover:text-blue-400 transition-colors"
+                className="text-accent"
+                onClick={() => annotate('refinements')}
               >
                 + Refinement
               </button>
               <button
-                onClick={addComment}
-                className="text-[10px] text-muted hover:text-ink transition-colors"
+                className="text-muted"
+                onClick={() => annotate('comments')}
               >
                 + Comment
               </button>
-              <button
-                onClick={() => setShowPromptModal(true)}
-                className="text-[10px] text-muted hover:text-ink transition-colors ml-auto"
-              >
-                View assembled prompt
-              </button>
             </div>
-
-            {node.prompt.refinements.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {node.prompt.refinements.map((r, i) => (
-                  <div key={i} className="bg-card/50 border border-line rounded-lg p-2">
-                    <div className="text-muted text-[9px] mb-0.5">{r.author} · {new Date(r.ts).toLocaleString()}</div>
-                    <div className="text-accent text-[10px]">{r.text}</div>
-                  </div>
-                ))}
-              </div>
+            {[...node.prompt.refinements, ...node.prompt.comments].map(
+              (item, i) => (
+                <div
+                  key={i}
+                  className="bg-card border border-line rounded-lg p-2"
+                >
+                  <p className="text-muted text-[9px]">
+                    {item.author} · {item.ts}
+                  </p>
+                  {item.text}
+                </div>
+              ),
             )}
-            {node.prompt.comments.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {node.prompt.comments.map((c, i) => (
-                  <div key={i} className="bg-card/50 border border-line rounded-lg p-2">
-                    <div className="text-muted text-[9px] mb-0.5">{c.author} · {new Date(c.ts).toLocaleString()}</div>
-                    <div className="text-ink text-[10px]">{c.text}</div>
-                  </div>
+            <label>
+              Provider
+              <select
+                className="form-input mt-1"
+                value={node.executor.provider}
+                onChange={(e) =>
+                  update(node.id, {
+                    executor: {
+                      ...node.executor,
+                      provider: e.target.value as 'bob' | 'mock',
+                      model:
+                        e.target.value === 'bob'
+                          ? 'shell-configured'
+                          : 'mock-v1',
+                    },
+                  })
+                }
+              >
+                {(state.capabilities?.providers ?? []).map((p) => (
+                  <option key={p} value={p}>
+                    {p === 'mock' ? 'Mock · no spend' : 'Bob Shell'}
+                  </option>
                 ))}
-              </div>
-            )}
-          </Section>
-
-          {/* Executor */}
-          <Section title="Executor">
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-muted text-[10px]">Provider</label>
-                  <select
-                    value={node.executor.provider}
-                    onChange={(e) =>
-                      updateNode(node.id, { executor: { ...node.executor, provider: e.target.value as Provider } })
-                    }
-                    className="w-full bg-card border border-line rounded-lg px-2 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent"
-                  >
-                    {ALL_PROVIDERS.map((p) => (
-                      <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-muted text-[10px]">Model</label>
-                  <input
-                    value={node.executor.model}
-                    onChange={(e) =>
-                      updateNode(node.id, { executor: { ...node.executor, model: e.target.value } })
-                    }
-                    className="w-full bg-card border border-line rounded-lg px-2 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-muted text-[10px]">Skills</label>
-                <div className="bg-card border border-line rounded-lg px-2 py-1.5 mt-0.5">
-                  <ChipInput
-                    value={node.executor.skills}
-                    onChange={(v) => updateNode(node.id, { executor: { ...node.executor, skills: v } })}
-                    placeholder="Add skill…"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-muted text-[10px]">Tools</label>
-                <div className="bg-card border border-line rounded-lg px-2 py-1.5 mt-0.5">
-                  <ChipInput
-                    value={node.executor.tools}
-                    onChange={(v) => updateNode(node.id, { executor: { ...node.executor, tools: v } })}
-                    placeholder="Add tool…"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-muted text-[10px]">Max Iterations</label>
+                {!['bob', 'mock'].includes(node.executor.provider) && (
+                  <option value={node.executor.provider}>
+                    {node.executor.provider} · unsupported
+                  </option>
+                )}
+              </select>
+            </label>
+            <p className="text-muted text-[10px]">
+              Bob model is Shell-configured. Skills and tools are requested task
+              instructions.
+            </p>
+            {(['skills', 'tools'] as const).map((field) => (
+              <label className="block" key={field}>
+                {field}
+                <ListInput
+                  values={node.executor[field]}
+                  onChange={(values) =>
+                    update(node.id, {
+                      executor: { ...node.executor, [field]: values },
+                    })
+                  }
+                />
+              </label>
+            ))}
+            {(
+              [
+                {
+                  key: 'maxCost',
+                  label: 'Budget (Bobcoins)',
+                  min: 0.01,
+                  max: 3,
+                  fallback: 0.5,
+                  step: 0.01,
+                },
+                {
+                  key: 'maxIterations',
+                  label: 'Maximum iterations',
+                  min: 1,
+                  max: 100,
+                  fallback: 3,
+                  step: 1,
+                },
+                {
+                  key: 'maxAttempts',
+                  label: 'Maximum attempts',
+                  min: 1,
+                  max: 10,
+                  fallback: 3,
+                  step: 1,
+                },
+              ] as const
+            ).map(({ key, label, min, max, fallback, step }) => (
+              <label className="block" key={key}>
+                {label}
                 <input
                   type="number"
-                  value={node.executor.maxIterations}
+                  min={min}
+                  max={max}
+                  step={step}
+                  className="form-input mt-1"
+                  value={node.executor[key] ?? fallback}
                   onChange={(e) =>
-                    updateNode(node.id, { executor: { ...node.executor, maxIterations: parseInt(e.target.value) || 1 } })
+                    update(node.id, {
+                      executor: {
+                        ...node.executor,
+                        [key]: Math.min(
+                          max,
+                          Math.max(min, Number(e.target.value) || fallback),
+                        ),
+                      },
+                    })
                   }
-                  className="w-24 bg-card border border-line rounded-lg px-2 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent"
                 />
-              </div>
-            </div>
-          </Section>
-
-          {/* Context */}
-          <Section title="Context">
-            <div>
-              <label className="text-muted text-[10px]">Files / Globs</label>
-              <div className="space-y-1 mt-1">
-                {node.context.files.map((f, i) => (
-                  <div key={i} className="flex gap-1 items-center">
-                    <select
-                      value={f.kind}
-                      onChange={(e) => {
-                        const files = [...node.context.files];
-                        files[i] = { ...files[i], kind: e.target.value as 'file' | 'glob' };
-                        updateNode(node.id, { context: { ...node.context, files } });
-                      }}
-                      className="bg-card border border-line rounded-md px-1.5 py-1 text-muted text-[10px] outline-none"
-                    >
-                      <option value="file">file</option>
-                      <option value="glob">glob</option>
-                    </select>
-                    <input
-                      value={f.path}
-                      onChange={(e) => {
-                        const files = [...node.context.files];
-                        files[i] = { ...files[i], path: e.target.value };
-                        updateNode(node.id, { context: { ...node.context, files } });
-                      }}
-                      className="flex-1 bg-card border border-line rounded-md px-2 py-1 text-ink text-[11px] outline-none focus:border-accent"
-                    />
-                    <button
-                      onClick={() => {
-                        const files = node.context.files.filter((_, j) => j !== i);
-                        updateNode(node.id, { context: { ...node.context, files } });
-                      }}
-                      className="text-muted hover:text-err text-xs"
-                    >×</button>
-                  </div>
+              </label>
+            ))}
+            <label>
+              Desired output
+              <select
+                className="form-input mt-1"
+                value={
+                  node.desiredOutput ??
+                  (node.executor.skills.includes('research')
+                    ? 'report'
+                    : 'patch')
+                }
+                onChange={(e) =>
+                  update(node.id, {
+                    desiredOutput: e.target.value as 'report' | 'patch',
+                  })
+                }
+              >
+                {(state.capabilities?.outputModes ?? []).map((mode) => (
+                  <option key={mode}>{mode}</option>
                 ))}
-                <button
-                  onClick={() => {
-                    updateNode(node.id, {
-                      context: { ...node.context, files: [...node.context.files, { path: '', kind: 'file' }] },
-                    });
-                  }}
-                  className="text-[10px] text-accent hover:text-blue-400 transition-colors"
-                >
-                  + Add file
-                </button>
-              </div>
-            </div>
-            <div className="mt-2">
-              <label className="text-muted text-[10px]">Extra context</label>
-              <textarea
-                value={node.context.extra}
-                onChange={(e) => updateNode(node.id, { context: { ...node.context, extra: e.target.value } })}
-                rows={2}
-                className="w-full bg-card border border-line rounded-lg px-2.5 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent resize-none"
+                {node.desiredOutput &&
+                  !['report', 'patch'].includes(node.desiredOutput) && (
+                    <option value={node.desiredOutput}>
+                      {node.desiredOutput} · unsupported
+                    </option>
+                  )}
+              </select>
+            </label>
+            <label className="flex gap-2">
+              <input
+                type="checkbox"
+                checked={!node.workspace && !override}
+                onChange={(e) => {
+                  setOverride(!e.target.checked);
+                  if (e.target.checked) update(node.id, { workspace: null });
+                }}
               />
-            </div>
-          </Section>
-
-          {/* Owners */}
-          <Section title="Owners">
-            <div className="space-y-1.5">
-              <div>
-                <label className="text-muted text-[10px]">Author</label>
-                <input
-                  value={node.owners.author}
-                  onChange={(e) =>
-                    updateNode(node.id, { owners: { ...node.owners, author: e.target.value } })
-                  }
-                  className="w-full bg-card border border-line rounded-lg px-2.5 py-1.5 text-ink text-xs mt-0.5 outline-none focus:border-accent"
-                />
+              Inherit project workspace
+            </label>
+            {(node.workspace || override) && (
+              <WorkspaceEditor
+                value={node.workspace}
+                onChange={(workspace) => update(node.id, { workspace })}
+              />
+            )}
+            <div>
+              <div className="text-muted text-[10px] uppercase mb-2">
+                Context files / globs
               </div>
-              <div>
-                <label className="text-muted text-[10px]">Responsible</label>
-                <div className="bg-card border border-line rounded-lg px-2 py-1.5 mt-0.5">
-                  <ChipInput
-                    value={node.owners.responsible}
-                    onChange={(v) => updateNode(node.id, { owners: { ...node.owners, responsible: v } })}
-                    placeholder="Add email…"
-                  />
-                </div>
-              </div>
-            </div>
-          </Section>
-
-          {/* Output (read-only) */}
-          {(node.output.summary || node.output.results.length > 0) && (
-            <Section title="Output">
-              {node.output.summary && (
-                <div
-                  className="border rounded-lg p-2.5 mb-2"
-                  style={{
-                    backgroundColor: node.status === 'failed' ? 'rgba(248,113,113,0.08)' : 'rgba(52,211,153,0.08)',
-                    borderColor: node.status === 'failed' ? 'rgba(248,113,113,0.2)' : 'rgba(52,211,153,0.2)',
-                  }}
-                >
-                  <div
-                    className="text-[11px]"
-                    style={{ color: node.status === 'failed' ? '#F87171' : '#34D399' }}
+              {node.context.files.map((file, i) => (
+                <div key={i} className="flex gap-1 mb-1">
+                  <select
+                    value={file.kind}
+                    className="form-input w-16"
+                    onChange={(e) =>
+                      update(node.id, {
+                        context: {
+                          ...node.context,
+                          files: node.context.files.map((f, j) =>
+                            j === i
+                              ? {
+                                  ...f,
+                                  kind: e.target.value as 'file' | 'glob',
+                                }
+                              : f,
+                          ),
+                        },
+                      })
+                    }
                   >
-                    {node.output.summary}
-                  </div>
+                    <option>file</option>
+                    <option>glob</option>
+                  </select>
+                  <input
+                    className="form-input"
+                    value={file.path}
+                    onChange={(e) =>
+                      update(node.id, {
+                        context: {
+                          ...node.context,
+                          files: node.context.files.map((f, j) =>
+                            j === i ? { ...f, path: e.target.value } : f,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                  <button
+                    onClick={() =>
+                      update(node.id, {
+                        context: {
+                          ...node.context,
+                          files: node.context.files.filter((_, j) => i !== j),
+                        },
+                      })
+                    }
+                  >
+                    ×
+                  </button>
                 </div>
-              )}
-              {node.output.results.length > 0 && (
-                <div className="space-y-1">
-                  {node.output.results.map((r, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <div className="w-1 h-1 rounded-full bg-ok mt-1.5 shrink-0" />
-                      <span className="text-ink text-[11px]">{r}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {node.output.artifacts.length > 0 && (
-                <div className="mt-2">
-                  <div className="text-muted text-[9px] mb-1">Artifacts</div>
-                  {node.output.artifacts.map((a, i) => (
-                    <div key={i} className="text-accent text-[10px] font-mono">{a}</div>
-                  ))}
-                </div>
-              )}
-            </Section>
+              ))}
+              <button
+                className="text-accent"
+                onClick={() =>
+                  update(node.id, {
+                    context: {
+                      ...node.context,
+                      files: [
+                        ...node.context.files,
+                        { kind: 'file', path: '' },
+                      ],
+                    },
+                  })
+                }
+              >
+                + File reference
+              </button>
+            </div>
+            <label>
+              Extra context
+              <textarea
+                className="form-input mt-1"
+                value={node.context.extra}
+                onChange={(e) =>
+                  update(node.id, {
+                    context: { ...node.context, extra: e.target.value },
+                  })
+                }
+              />
+            </label>
+            <p className="text-muted">Author: {node.owners.author}</p>
+            <label>
+              Responsible (emails)
+              <ListInput
+                values={node.owners.responsible}
+                onChange={(responsible) =>
+                  update(node.id, { owners: { ...node.owners, responsible } })
+                }
+              />
+            </label>
+          </fieldset>
+          <button className="text-accent" onClick={previewPrompt}>
+            Preview assembled prompt
+          </button>
+          <p className="text-muted text-[10px]">
+            Preview uses saved definitions and visible inputs. The exact frozen
+            prompt, including resolved Git state, is recorded in each attempt.
+          </p>
+          {node.inboxMeta && (
+            <div className="bg-card border border-line rounded-lg p-3">
+              <h3 className="text-accent">Source provenance</h3>
+              <p>{node.inboxMeta.message}</p>
+              <p className="text-muted break-all">
+                Source node {node.inboxMeta.sourceNodeId} · attempt{' '}
+                {node.inboxMeta.sourceAttemptId ?? 'not recorded'}
+              </p>
+              <p>{node.inboxMeta.sourceOutput?.summary}</p>
+            </div>
           )}
-
-          {/* History */}
-          {history.length > 0 && (
-            <Section title={`History (${history.length})`}>
-              <div className="bg-card border border-line rounded-lg px-2 py-1">
-                {[...history].reverse().map((entry, i) => (
-                  <HistoryRow key={i} entry={entry} nodeName={node.name} />
-                ))}
-              </div>
-            </Section>
+          <div>
+            <h3 className="text-muted uppercase text-[10px] mb-2">
+              Output / status
+            </h3>
+            <pre className="whitespace-pre-wrap break-words">
+              {node.output.summary || 'No output yet'}
+            </pre>
+            {node.output.results.map((r, i) => (
+              <p key={i}>{r}</p>
+            ))}
+            {node.output.artifacts.map((r, i) => (
+              <p className="text-accent" key={i}>
+                {r}
+              </p>
+            ))}
+            {node.output.commands.length > 0 && (
+              <pre className="whitespace-pre-wrap">
+                {node.output.commands.join('\n')}
+              </pre>
+            )}
+          </div>
+          <div>
+            <h3 className="text-muted uppercase text-[10px] mb-2">Attempts</h3>
+            {[...attempts].reverse().map((a) => (
+              <button
+                key={a.id}
+                className="small-button block w-full text-left mb-1"
+                onClick={() => setDetail(a)}
+              >
+                {a.status} · {new Date(a.startedAt).toLocaleString()}
+                <span className="block text-muted">
+                  {a.sessionCosts == null
+                    ? 'Cost unknown'
+                    : `${a.sessionCosts} Bobcoins`}{' '}
+                  · task {a.taskId ?? 'unknown'}
+                </span>
+              </button>
+            ))}
+          </div>
+          {handoffs.length > 0 && (
+            <div>
+              <h3 className="text-muted uppercase text-[10px] mb-2">
+                Scoped collaboration results
+              </h3>
+              {handoffs.map((h) => (
+                <div
+                  key={h.id}
+                  className="bg-card border border-line rounded-lg p-2 mb-2"
+                >
+                  <p>
+                    {h.recipient?.name ?? 'Recipient unavailable'} ·{' '}
+                    {h.recipient?.status ?? 'unknown'}
+                  </p>
+                  <p className="text-muted">{h.recipient?.summary}</p>
+                  {state.graphContexts.some(
+                    (g) => g.teamId === h.recipientTeamId,
+                  ) && (
+                    <button
+                      className="text-accent"
+                      onClick={() => state.navigate(h.recipientTeamId)}
+                    >
+                      Open recipient team →
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="text-err">
+              {error}
+            </p>
           )}
         </div>
-
-        {/* Actions footer */}
-        <div className="border-t border-line p-3 space-y-2">
-          {/* Gate approval buttons */}
-          {node.status === 'needs_approval' && (
-            <div className="flex gap-2">
+        <fieldset
+          disabled={!editable || busy}
+          className="border-t border-line p-3 space-y-2 text-xs"
+        >
+          {node.type === 'inbox' ? (
+            <button
+              className="action-button w-full"
+              onClick={() => update(node.id, { type: 'worker' })}
+            >
+              Convert to Worker
+            </button>
+          ) : node.type === 'gate' &&
+            node.status === 'needs_approval' &&
+            node.currentAttemptId ? (
+            <>
               <button
-                onClick={() => approveGate(node.id)}
-                className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-ok/20 hover:bg-ok/30 text-ok transition-colors"
+                className="action-button w-full"
+                onClick={() => void state.approveGate(node.id)}
               >
-                ✓ Approve
+                Approve current attempt
               </button>
-              {upstreamId && (
-                <button
-                  onClick={() => requestChanges(node.id, upstreamId)}
-                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-warn/20 hover:bg-warn/30 text-warn transition-colors"
-                >
-                  ↩ Request Changes
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Inbox-specific: Convert to worker */}
-          {node.type === 'inbox' && (
+              <select
+                className="form-input"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              >
+                {reworkTargets.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className="form-input"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="Rework feedback"
+              />
+              <button
+                className="small-button w-full"
+                disabled={!feedback.trim() || !target}
+                onClick={() =>
+                  void state.requestChanges(node.id, target, feedback)
+                }
+              >
+                Request changes
+              </button>
+            </>
+          ) : node.status === 'running' || node.status === 'queued' ? (
             <button
-              onClick={handleConvertToWorker}
-              className="w-full py-1.5 rounded-lg text-xs font-semibold bg-warn/15 hover:bg-warn/25 text-warn transition-colors border border-warn/20"
+              className="small-button w-full"
+              onClick={() => void state.cancelNode(node.id)}
             >
-              ⚙ Convert to Worker
+              Cancel task
+            </button>
+          ) : (
+            <button
+              className="action-button w-full"
+              onClick={() => void state.runNode(node.id)}
+            >
+              Run Node
             </button>
           )}
-
-          {/* Run button */}
-          {node.status !== 'running' && node.status !== 'needs_approval' && (
-            <button
-              onClick={() => runNode(node.id)}
-              className="w-full py-1.5 rounded-lg text-xs font-semibold bg-accent/20 hover:bg-accent/30 text-accent transition-colors"
-            >
-              {node.type === 'gate' ? '▶ Start Review' : '▶ Run Node'}
-            </button>
-          )}
-
-          {/* Send to team */}
-          <button
-            onClick={() => setShowSendModal(true)}
-            className="w-full py-1.5 rounded-lg text-xs font-medium bg-card hover:bg-line text-muted hover:text-ink transition-colors border border-line"
-          >
-            📤 Send to Team…
+          <button className="small-button w-full" onClick={() => setSend(true)}>
+            Send to Team…
           </button>
-
-          {/* Save as template */}
           <button
-            onClick={handleSaveAsTemplate}
-            className="w-full py-1.5 rounded-lg text-xs font-medium bg-card hover:bg-line text-muted hover:text-ink transition-colors border border-line"
+            disabled={savingTemplate}
+            className="small-button w-full"
+            onClick={async () => {
+              const name = window.prompt('Template name', node.name);
+              if (!name) return;
+              setSavingTemplate(true);
+              await state.addTemplate({
+                name,
+                description: node.prompt.task.slice(0, 80),
+                defaults: {
+                  type: node.type,
+                  priority: node.priority,
+                  prompt: node.prompt,
+                  executor: node.executor,
+                  context: node.context,
+                },
+              });
+              setSavingTemplate(false);
+            }}
           >
             Save as Template
           </button>
-        </div>
+          <button
+            className="small-button w-full"
+            onClick={() => void state.removeNode(node.id)}
+          >
+            Delete task
+          </button>
+        </fieldset>
       </aside>
-
-      {/* Modals */}
-      {showSendModal && (
-        <SendToTeamModal node={node} onClose={() => setShowSendModal(false)} />
-      )}
-      {showPromptModal && (
+      {send && <SendToTeamModal node={node} onClose={() => setSend(false)} />}
+      {preview !== null && (
         <AssembledPromptModal
-          prompt={getAssembledPrompt()}
-          onClose={() => setShowPromptModal(false)}
+          prompt={preview}
+          onClose={() => setPreview(null)}
         />
+      )}
+      {detail && (
+        <div className="modal-shade">
+          <div className="modal-panel space-y-3 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between">
+              <h2>Attempt {detail.id}</h2>
+              <button onClick={() => setDetail(null)}>×</button>
+            </div>
+            <p>
+              {detail.status} · definition version {detail.nodeVersion}
+            </p>
+            <p>
+              Started {detail.startedAt}
+              <br />
+              Finished {detail.finishedAt ?? 'pending'}
+            </p>
+            <p>
+              Task ID: {detail.taskId ?? 'unknown'} ·{' '}
+              {detail.sessionCosts == null
+                ? 'Cost unknown'
+                : `${detail.sessionCosts} Bobcoins`}
+            </p>
+            {detail.error && <p className="text-err">{detail.error}</p>}
+            <Snapshot title="Before" value={detail.workspaceBefore} />
+            <Snapshot title="After" value={detail.workspaceAfter} />
+            <pre className="whitespace-pre-wrap break-words text-[10px]">
+              {detail.output?.summary}
+            </pre>
+            <h3>Exact frozen prompt</h3>
+            <pre className="whitespace-pre-wrap break-words text-[10px]">
+              {detail.assembledPrompt}
+            </pre>
+          </div>
+        </div>
       )}
     </>
   );

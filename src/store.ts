@@ -1,378 +1,567 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { WorkerNode, Team, GraphContext, NodeTemplate, NodeStatus, Project } from './types';
-import { SEED_PROJECT } from './seed';
-import { getExecutor, assemblePrompt } from './executors/registry';
-
-interface AppState {
-  // Data
-  teams: Team[];
-  nodes: WorkerNode[];
-  graphContexts: GraphContext[];
-  templates: NodeTemplate[];
-
-  // UI
-  selectedNodeId: string | null;
+import { create, type UseBoundStore, type StoreApi } from 'zustand';
+import { api, ApiError } from './api';
+import {
+  effectiveRole,
+  mergePatch,
+  nodeDefinition,
+  templateDefinition,
+  type Auth,
+} from './client-helpers';
+import type { WorkerNode, GraphContext, NodeTemplate, Project } from './types';
+export interface Capabilities {
+  providers: string[];
+  outputModes: string[];
+  bobConfigured: boolean;
+  workspaceRootsConfigured: boolean;
+  maxCost: { default: number; max: number };
+}
+export interface GraphRun {
+  id: string;
+  graphId: string;
+  status: string;
+  paused: boolean;
+  reworkRounds: number;
+}
+type Patch = Record<string, unknown>;
+const empty: Project = {
+  version: 1,
+  teams: [],
+  nodes: [],
+  graphContexts: [],
+  templates: [],
+};
+interface State extends Project {
+  auth: Auth | null;
+  loading: boolean;
+  error: string | null;
+  capabilities: Capabilities | null;
+  navigationId: string | null;
   selectedTeamId: string | null;
+  selectedGraphId: string | null;
+  selectedNodeId: string | null;
   showTemplatesDrawer: boolean;
   showSettings: boolean;
-  runningGraphTeamId: string | null;
-
-  // Node actions
-  selectNode: (id: string | null) => void;
+  showAdmin: boolean;
+  busy: string[];
+  graphRun: GraphRun | null;
+  bootstrap: () => Promise<void>;
+  authenticate: (mode: string, body: unknown) => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+  navigate: (id: string | null) => void;
   selectTeam: (id: string | null) => void;
-  updateNode: (id: string, patch: Partial<WorkerNode>) => void;
-  addNode: (node: WorkerNode) => void;
-  removeNode: (id: string) => void;
-
-  // Edge/connection actions
-  addEdge: (fromNodeId: string, toNodeId: string) => void;
-  removeEdge: (fromNodeId: string, toNodeId: string) => void;
-
-  // Executor
-  runNode: (id: string) => void;
-  approveGate: (id: string) => void;
-  requestChanges: (gateId: string, targetNodeId: string) => void;
-
-  // Graph runner
-  runGraph: (teamId: string) => void;
-
-  // Templates
+  selectGraph: (id: string) => void;
+  selectNode: (id: string | null) => void;
+  canEdit: (teamId: string) => boolean;
+  updateNode: (
+    id: string,
+    patch: Partial<WorkerNode> | { workspace: null },
+  ) => void;
+  updateGraph: (id: string, patch: Partial<GraphContext>) => void;
+  createNode: (type?: WorkerNode['type']) => Promise<void>;
+  removeNode: (id: string) => Promise<void>;
+  addEdge: (from: string, to: string) => void;
+  removeEdge: (from: string, to: string) => void;
+  runNode: (id: string) => Promise<void>;
+  cancelNode: (id: string) => Promise<void>;
+  approveGate: (id: string) => Promise<void>;
+  requestChanges: (
+    id: string,
+    target: string,
+    feedback: string,
+  ) => Promise<void>;
+  runGraph: () => Promise<void>;
+  resumeGraph: () => Promise<void>;
+  cancelGraph: () => Promise<void>;
+  addTemplate: (
+    tpl: Pick<NodeTemplate, 'name' | 'description' | 'defaults'>,
+  ) => Promise<boolean>;
+  applyTemplate: (id: string, teamId: string) => Promise<boolean>;
   toggleTemplatesDrawer: () => void;
-  addTemplate: (tpl: NodeTemplate) => void;
-  applyTemplate: (templateId: string, teamId: string) => void;
-
-  // Settings
   toggleSettings: () => void;
-
-  // Persistence
   exportProject: () => Project;
-  importProject: (p: Project) => void;
-  resetToSeed: () => void;
 }
-
-function nodeStatusColor(status: NodeStatus): string {
-  switch (status) {
-    case 'done': return '#34D399';
-    case 'running': return '#60A5FA';
-    case 'failed': return '#F87171';
-    case 'rework': return '#FBBF24';
-    case 'needs_approval': return '#FBBF24';
-    case 'blocked': return '#5B7A99';
-    case 'ready': return '#5B8CFF';
-    case 'queued': return '#8B94A7';
-    default: return '#8B94A7';
+let generation = 0;
+let revision = -1;
+let refreshing: Promise<void> | null = null;
+const pending = new Map<string, Patch>();
+const saving = new Map<string, Promise<void>>();
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const failed = new Map<string, Error>();
+function requireSessionBootstrap(expected: number) {
+  if (expected !== generation)
+    throw new Error('Session changed; stale response ignored');
+}
+function clearSession() {
+  generation++;
+  revision = -1;
+  refreshing = null;
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
+  pending.clear();
+  saving.clear();
+  failed.clear();
+  useStore.setState({
+    ...empty,
+    loading: false,
+    auth: null,
+    capabilities: null,
+    selectedNodeId: null,
+    selectedTeamId: null,
+    selectedGraphId: null,
+    navigationId: null,
+    busy: [],
+    graphRun: null,
+    showAdmin: false,
+    showSettings: false,
+    showTemplatesDrawer: false,
+  });
+}
+export async function sessionRequest<T>(
+  path: string,
+  method = 'GET',
+  body?: unknown,
+): Promise<T> {
+  const current = generation;
+  try {
+    const result = await api<T>(path, method, body);
+    if (current !== generation)
+      throw new Error('Session changed; stale response ignored');
+    return result;
+  } catch (error) {
+    if (
+      current === generation &&
+      error instanceof ApiError &&
+      error.status === 401 &&
+      path !== '/auth/login' &&
+      path !== '/auth/register'
+    )
+      clearSession();
+    throw error;
   }
 }
-
-function makeId() {
-  return `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+export const sessionGeneration = () => generation;
+export function requireSession(expected: number) {
+  if (expected !== generation || !useStore.getState().auth)
+    throw new Error('Session changed; action canceled');
 }
-
-/** Migrate legacy nodes that lack history field */
-function migrateNodes(nodes: WorkerNode[]): WorkerNode[] {
-  return nodes.map((n) => ({
-    ...n,
-    history: n.history ?? [],
+function report(error: unknown) {
+  useStore.setState({
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+function authorOverlay(key: string): Patch {
+  return pending.get(key) ?? {};
+}
+function applyProject(project: Project & { revision?: number }) {
+  if ((project.revision ?? 0) < revision) return;
+  revision = project.revision ?? revision;
+  const state = useStore.getState();
+  useStore.setState({
+    ...project,
+    nodes: project.nodes.map((n) =>
+      mergePatch(n, authorOverlay(`nodes/${n.id}`)),
+    ),
+    graphContexts: project.graphContexts.map((g) =>
+      mergePatch(g, authorOverlay(`graphs/${g.id}`)),
+    ),
+    selectedNodeId: project.nodes.some((n) => n.id === state.selectedNodeId)
+      ? state.selectedNodeId
+      : null,
+  });
+}
+function acceptCreatedNode(node: WorkerNode & { revision?: number }) {
+  revision = Math.max(revision, node.revision ?? revision);
+  useStore.setState((s) => ({
+    nodes: [...s.nodes.filter((n) => n.id !== node.id), node],
   }));
 }
-
-export const useStore = create<AppState>()(
-  persist(
-    (set, get) => ({
-      teams: SEED_PROJECT.teams,
-      nodes: SEED_PROJECT.nodes,
-      graphContexts: SEED_PROJECT.graphContexts,
-      templates: SEED_PROJECT.templates,
-
-      selectedNodeId: null,
-      selectedTeamId: null,
-      showTemplatesDrawer: false,
-      showSettings: false,
-      runningGraphTeamId: null,
-
-      selectNode: (id) => set({ selectedNodeId: id }),
-      selectTeam: (id) => set({ selectedTeamId: id }),
-
-      updateNode: (id, patch) =>
-        set((s) => ({
-          nodes: s.nodes.map((n) =>
-            n.id === id ? { ...n, ...patch } : n
-          ),
-        })),
-
-      addNode: (node) => set((s) => ({ nodes: [...s.nodes, node] })),
-
-      removeNode: (id) =>
-        set((s) => ({
-          nodes: s.nodes
-            .filter((n) => n.id !== id)
-            .map((n) => ({
-              ...n,
-              inputs: n.inputs.filter((inp) => inp.fromNodeId !== id),
-            })),
-          selectedNodeId: s.selectedNodeId === id ? null : s.selectedNodeId,
-        })),
-
-      addEdge: (fromNodeId, toNodeId) =>
-        set((s) => ({
-          nodes: s.nodes.map((n) => {
-            if (n.id !== toNodeId) return n;
-            if (n.inputs.some((i) => i.fromNodeId === fromNodeId)) return n;
-            return { ...n, inputs: [...n.inputs, { fromNodeId, enabled: true }] };
-          }),
-        })),
-
-      removeEdge: (fromNodeId, toNodeId) =>
-        set((s) => ({
-          nodes: s.nodes.map((n) => {
-            if (n.id !== toNodeId) return n;
-            return { ...n, inputs: n.inputs.filter((i) => i.fromNodeId !== fromNodeId) };
-          }),
-        })),
-
-      runNode: (id) => {
-        const node = get().nodes.find((n) => n.id === id);
-        if (!node) return;
-
-        if (node.type === 'gate') {
-          get().updateNode(id, { status: 'needs_approval', progress: 100 });
-          return;
-        }
-
-        const graphContext = get().graphContexts.find((g) => g.id === node.graphId);
-        if (!graphContext) {
-          get().updateNode(id, { status: 'failed', progress: 0 });
-          return;
-        }
-
-        // Gather upstream inputs
-        const incoming = node.inputs
-          .filter((i) => i.enabled)
-          .map((i) => {
-            const upstream = get().nodes.find((n) => n.id === i.fromNodeId);
-            if (!upstream) return null;
-            return {
-              summary_prev: upstream.output.summary,
-              results: upstream.output.results,
-              commands: upstream.output.commands,
-              artifacts: upstream.output.artifacts,
-            };
-          })
-          .filter(Boolean) as import('./types').EdgeContract[];
-
-        const prompt = assemblePrompt(node, graphContext, incoming);
-        const executor = getExecutor(node.executor.provider);
-
-        get().updateNode(id, { status: 'running', progress: 0 });
-        const startTs = Date.now();
-
-        executor
-          .run({ node, graphContext, incoming, assembledPrompt: prompt }, (pct) => {
-            get().updateNode(id, { progress: pct });
-          })
-          .then((output) => {
-            const durationMs = Date.now() - startTs;
-            const currentNode = get().nodes.find((n) => n.id === id);
-            const history = currentNode?.history ?? [];
-            get().updateNode(id, {
-              status: 'done',
-              progress: 100,
-              output,
-              history: [
-                ...history,
-                {
-                  ts: new Date().toISOString(),
-                  provider: node.executor.provider,
-                  model: node.executor.model,
-                  status: 'done' as const,
-                  summary: output.summary,
-                  durationMs,
-                  ...(output.simulated ? { simulated: true } : {}),
-                },
-              ],
-            });
-          })
-          .catch((err: Error) => {
-            const durationMs = Date.now() - startTs;
-            const currentNode = get().nodes.find((n) => n.id === id);
-            const history = currentNode?.history ?? [];
-            const errMsg = err?.message ?? String(err);
-            get().updateNode(id, {
-              status: 'failed',
-              progress: 0,
-              output: {
-                summary: errMsg,
-                results: [],
-                commands: [],
-                artifacts: [],
-              },
-              history: [
-                ...history,
-                {
-                  ts: new Date().toISOString(),
-                  provider: node.executor.provider,
-                  model: node.executor.model,
-                  status: 'failed' as const,
-                  summary: errMsg,
-                  durationMs,
-                },
-              ],
-            });
-          });
-      },
-
-      approveGate: (id) => {
-        get().updateNode(id, { status: 'done', progress: 100 });
-      },
-
-      requestChanges: (gateId, targetNodeId) => {
-        get().updateNode(gateId, { status: 'done', progress: 100 });
-        get().updateNode(targetNodeId, { status: 'rework', progress: 0 });
-      },
-
-      runGraph: (teamId) => {
-        const { nodes, runNode, updateNode } = get();
-        const teamNodes = nodes.filter((n) => n.teamId === teamId);
-
-        // Reset non-done/rework nodes to queued
-        teamNodes.forEach((n) => {
-          if (!['done', 'rework'].includes(n.status)) {
-            updateNode(n.id, { status: 'queued', progress: 0 });
-          }
-        });
-
-        set({ runningGraphTeamId: teamId });
-
-        const executed = new Set<string>(
-          teamNodes.filter((n) => n.status === 'done').map((n) => n.id)
-        );
-
-        function tryAdvance() {
-          const currentNodes = get().nodes.filter((n) => n.teamId === teamId);
-          let launched = false;
-
-          for (const node of currentNodes) {
-            if (['done', 'running', 'needs_approval'].includes(node.status)) continue;
-            if (node.status === 'rework') continue;
-
-            const enabledInputs = node.inputs.filter((i) => i.enabled);
-            const allDone = enabledInputs.every((i) =>
-              get().nodes.find((n) => n.id === i.fromNodeId)?.status === 'done'
-            );
-
-            if (allDone) {
-              launched = true;
-              get().runNode(node.id);
-              executed.add(node.id);
+export function acceptCreatedGraph(
+  graph: GraphContext & { revision?: number },
+) {
+  revision = Math.max(revision, graph.revision ?? revision);
+  useStore.setState((s) => ({
+    graphContexts: [...s.graphContexts.filter((g) => g.id !== graph.id), graph],
+  }));
+}
+export async function flushEdits(): Promise<void> {
+  const current = generation;
+  for (const key of [...pending.keys(), ...saving.keys()]) {
+    requireSession(current);
+    await save(key);
+  }
+  requireSession(current);
+  const error = failed.values().next().value;
+  if (error) {
+    failed.clear();
+    throw error;
+  }
+}
+async function save(key: string): Promise<void> {
+  const current = generation;
+  const timer = timers.get(key);
+  if (timer) clearTimeout(timer);
+  timers.delete(key);
+  if (saving.has(key)) {
+    await saving.get(key);
+    if (current !== generation) return;
+    if (pending.has(key)) await save(key);
+    return;
+  }
+  const patch = pending.get(key);
+  if (!patch) return;
+  const promise = (async () => {
+    try {
+      const result = await sessionRequest<
+        (WorkerNode | GraphContext) & { revision?: number }
+      >(`/${key}`, 'PATCH', patch);
+      if (current !== generation) return;
+      const fresh = (result.revision ?? revision) >= revision;
+      revision = Math.max(revision, result.revision ?? revision);
+      if (pending.get(key) === patch) pending.delete(key);
+      const [kind, id] = key.split('/');
+      if (!fresh) return;
+      useStore.setState((s) =>
+        kind === 'nodes'
+          ? {
+              nodes: s.nodes.map((n) =>
+                n.id === id
+                  ? mergePatch(result as WorkerNode, authorOverlay(key))
+                  : n,
+              ),
             }
-          }
-
-          // Check if graph is complete or stalled
-          const fresh = get().nodes.filter((n) => n.teamId === teamId);
-          const allSettled = fresh.every((n) =>
-            ['done', 'failed', 'needs_approval', 'rework', 'blocked'].includes(n.status)
-          );
-
-          if (!allSettled && launched) {
-            setTimeout(tryAdvance, 4500);
-          } else {
-            set({ runningGraphTeamId: null });
-          }
-        }
-
-        // Small delay so state settles
-        setTimeout(tryAdvance, 100);
-      },
-
-      toggleTemplatesDrawer: () =>
-        set((s) => ({ showTemplatesDrawer: !s.showTemplatesDrawer })),
-
-      addTemplate: (tpl) =>
-        set((s) => ({ templates: [...s.templates.filter((t) => t.id !== tpl.id), tpl] })),
-
-      applyTemplate: (templateId, teamId) => {
-        const { templates, teams } = get();
-        const tpl = templates.find((t) => t.id === templateId);
-        const team = teams.find((t) => t.id === teamId);
-        if (!tpl || !team) return;
-
-        const newNode: WorkerNode = {
-          id: makeId(),
-          graphId: `graph-${teamId}`,
-          teamId,
-          type: tpl.defaults.type ?? 'worker',
-          name: tpl.name,
-          status: 'draft',
-          priority: tpl.defaults.priority ?? 'normal',
-          progress: 0,
-          position: { x: 100, y: 100 },
-          prompt: tpl.defaults.prompt ?? { task: '', refinements: [], comments: [] },
-          executor: tpl.defaults.executor ?? {
-            provider: 'mock',
-            model: 'mock-v1',
-            skills: [],
-            tools: [],
-            maxIterations: 3,
-          },
-          context: tpl.defaults.context ?? { files: [], extra: '' },
-          owners: { author: 'me@acme.com', responsible: [] },
-          inputs: [],
-          output: { summary: '', results: [], commands: [], artifacts: [] },
-          history: [],
-          templateId,
-          version: 1,
-        };
-        get().addNode(newNode);
-        get().selectNode(newNode.id);
-      },
-
-      toggleSettings: () => set((s) => ({ showSettings: !s.showSettings })),
-
-      exportProject: () => ({
-        version: 1,
-        teams: get().teams,
-        nodes: get().nodes,
-        graphContexts: get().graphContexts,
-        templates: get().templates,
-      }),
-
-      importProject: (p) =>
-        set({
-          teams: p.teams,
-          nodes: migrateNodes(p.nodes),
-          graphContexts: p.graphContexts,
-          templates: p.templates,
-          selectedNodeId: null,
-          selectedTeamId: null,
-        }),
-
-      resetToSeed: () =>
-        set({
-          teams: SEED_PROJECT.teams,
-          nodes: SEED_PROJECT.nodes,
-          graphContexts: SEED_PROJECT.graphContexts,
-          templates: SEED_PROJECT.templates,
-          selectedNodeId: null,
-          selectedTeamId: null,
-        }),
-    }),
-    {
-      name: 'teamweave-project',
-      version: 2,
-      migrate: (persisted: unknown, version: number) => {
-        if (version < 2) {
-          const state = persisted as AppState;
-          return {
-            ...state,
-            nodes: migrateNodes(state.nodes ?? []),
-          };
-        }
-        return persisted as AppState;
-      },
+          : {
+              graphContexts: s.graphContexts.map((g) =>
+                g.id === id
+                  ? mergePatch(result as GraphContext, authorOverlay(key))
+                  : g,
+              ),
+            },
+      );
+    } catch (error) {
+      if (current !== generation) return;
+      if (pending.get(key) === patch) pending.delete(key);
+      failed.set(key, error as Error);
+      report(error);
+      if (refreshing) await refreshing;
+      if (current === generation) await useStore.getState().refresh();
     }
-  )
+  })();
+  saving.set(key, promise);
+  await promise;
+  if (current !== generation) return;
+  saving.delete(key);
+  if (pending.has(key)) await save(key);
+}
+function queue(key: string, patch: Patch) {
+  failed.delete(key);
+  pending.set(key, mergePatch(pending.get(key) ?? {}, patch));
+  const timer = timers.get(key);
+  if (timer) clearTimeout(timer);
+  timers.set(
+    key,
+    setTimeout(() => {
+      void save(key).catch(report);
+    }, 400),
+  );
+}
+async function action(key: string, operation: () => Promise<unknown>) {
+  if (useStore.getState().busy.includes(key)) return;
+  const current = generation;
+  useStore.setState((s) => ({ busy: [...s.busy, key], error: null }));
+  try {
+    await flushEdits();
+    requireSession(current);
+    await operation();
+    requireSession(current);
+    await useStore.getState().refresh();
+  } catch (error) {
+    if (current === generation) report(error);
+  } finally {
+    if (current === generation)
+      useStore.setState((s) => ({ busy: s.busy.filter((k) => k !== key) }));
+  }
+}
+const graphAction = (suffix: string): Promise<void> => {
+  const id = useStore.getState().selectedGraphId;
+  return id
+    ? action(`graph:${id}`, () =>
+        sessionRequest(`/graphs/${id}/${suffix}`, 'POST'),
+      )
+    : Promise.resolve();
+};
+export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
+  (set, get) => ({
+    ...empty,
+    auth: null,
+    loading: true,
+    error: null,
+    capabilities: null,
+    navigationId: null,
+    selectedTeamId: null,
+    selectedGraphId: null,
+    selectedNodeId: null,
+    showTemplatesDrawer: false,
+    showSettings: false,
+    showAdmin: false,
+    busy: [],
+    graphRun: null,
+    bootstrap: async () => {
+      const current = generation;
+      set({ loading: true, error: null });
+      try {
+        const auth = await sessionRequest<Auth>('/auth/me');
+        requireSessionBootstrap(current);
+        set({ auth });
+        await get().refresh();
+        requireSessionBootstrap(current);
+        const capabilities =
+          await sessionRequest<Capabilities>('/capabilities');
+        requireSessionBootstrap(current);
+        set({ capabilities });
+      } catch (error) {
+        if (
+          !(error instanceof ApiError && error.status === 401) &&
+          current === generation
+        )
+          report(error);
+      } finally {
+        if (current === generation) set({ loading: false });
+      }
+    },
+    authenticate: async (mode, body) => {
+      clearSession();
+      const current = generation;
+      set({ loading: true, error: null });
+      try {
+        const auth = await sessionRequest<Auth>(`/auth/${mode}`, 'POST', body);
+        requireSessionBootstrap(current);
+        set({ auth });
+        await get().refresh();
+        const capabilities =
+          await sessionRequest<Capabilities>('/capabilities');
+        requireSessionBootstrap(current);
+        set({ capabilities });
+      } catch (error) {
+        if (current === generation) report(error);
+      } finally {
+        if (current === generation) set({ loading: false });
+      }
+    },
+    logout: async () => {
+      clearSession();
+      const current = generation;
+      set({ loading: true, error: null });
+      try {
+        await api('/auth/logout', 'POST');
+      } catch (error) {
+        if (current === generation) report(error);
+      } finally {
+        if (current === generation) set({ loading: false });
+      }
+    },
+    refresh: async () => {
+      if (!get().auth) return;
+      if (refreshing) return refreshing;
+      const current = generation;
+      const task = (async () => {
+        try {
+          const project = await sessionRequest<Project & { revision: number }>(
+            '/project',
+          );
+          requireSession(current);
+          applyProject(project);
+          const graph = get().selectedGraphId;
+          if (graph) {
+            const run = await sessionRequest<GraphRun | null>(
+              `/graphs/${graph}/run`,
+            );
+            if (current === generation && get().selectedGraphId === graph)
+              set({ graphRun: run });
+          }
+        } catch (error) {
+          if (current === generation) report(error);
+        }
+      })();
+      refreshing = task;
+      await task;
+      if (current === generation) refreshing = null;
+    },
+    navigate: (id) => {
+      const team = get().teams.find((t) => t.id === id);
+      const isTeam =
+        team && (team.kind === 'team' || (!team.kind && team.space.w > 0));
+      set({
+        navigationId: id,
+        selectedTeamId: isTeam ? id : null,
+        selectedGraphId: isTeam
+          ? (get().graphContexts.find((g) => g.teamId === id)?.id ?? null)
+          : null,
+        selectedNodeId: null,
+        graphRun: null,
+      });
+    },
+    selectTeam: (id) => get().navigate(id),
+    selectGraph: (id) => {
+      if (
+        get().graphContexts.some(
+          (g) => g.id === id && g.teamId === get().selectedTeamId,
+        )
+      )
+        set({ selectedGraphId: id, selectedNodeId: null, graphRun: null });
+    },
+    selectNode: (id) => {
+      const node = get().nodes.find((n) => n.id === id);
+      if (node && node.teamId === get().selectedTeamId)
+        set({ selectedNodeId: id, selectedGraphId: node.graphId });
+      else set({ selectedNodeId: null });
+    },
+    canEdit: (id) =>
+      ['admin', 'editor'].includes(
+        effectiveRole(get().auth, get().teams, id) ?? '',
+      ),
+    updateNode: (id, patch) => {
+      const node = get().nodes.find((n) => n.id === id);
+      if (!node || !get().canEdit(node.teamId)) return;
+      const definition = nodeDefinition(patch as Partial<WorkerNode>);
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === id ? mergePatch(n, definition) : n,
+        ),
+      });
+      queue(`nodes/${id}`, definition);
+    },
+    updateGraph: (id, patch) => {
+      const graph = get().graphContexts.find((g) => g.id === id);
+      if (!graph || !get().canEdit(graph.teamId)) return;
+      set({
+        graphContexts: get().graphContexts.map((g) =>
+          g.id === id ? mergePatch(g, patch) : g,
+        ),
+      });
+      queue(`graphs/${id}`, patch);
+    },
+    createNode: async (type = 'worker') => {
+      const { selectedTeamId: teamId, selectedGraphId: graphId } = get();
+      if (!teamId || !graphId || !get().canEdit(teamId)) return;
+      await action('createNode', async () => {
+        const node = await sessionRequest<WorkerNode>('/nodes', 'POST', {
+          teamId,
+          graphId,
+          name: type === 'gate' ? 'Human review' : 'New task',
+          type,
+          position: {
+            x:
+              80 +
+              get().nodes.filter((n) => n.graphId === graphId).length * 240,
+            y: 80,
+          },
+        });
+        const current = generation;
+        acceptCreatedNode(node);
+        await get().refresh();
+        requireSession(current);
+        get().selectNode(node.id);
+      });
+    },
+    removeNode: (id) =>
+      action(id, () => sessionRequest(`/nodes/${id}`, 'DELETE')),
+    addEdge: (from, to) => {
+      const source = get().nodes.find((n) => n.id === from);
+      const target = get().nodes.find((n) => n.id === to);
+      if (!source || !target) return;
+      if (source.graphId !== target.graphId) {
+        set({
+          error:
+            'Data edges must connect tasks in the same project. Use a team handoff instead.',
+        });
+        return;
+      }
+      if (!target.inputs.some((i) => i.fromNodeId === from))
+        get().updateNode(to, {
+          inputs: [...target.inputs, { fromNodeId: from, enabled: true }],
+        });
+    },
+    removeEdge: (from, to) => {
+      const target = get().nodes.find((n) => n.id === to);
+      if (target)
+        get().updateNode(to, {
+          inputs: target.inputs.filter((i) => i.fromNodeId !== from),
+        });
+    },
+    runNode: (id) =>
+      action(id, () => sessionRequest(`/nodes/${id}/run`, 'POST')),
+    cancelNode: (id) =>
+      action(id, () => sessionRequest(`/nodes/${id}/cancel`, 'POST')),
+    approveGate: (id) =>
+      action(id, () =>
+        sessionRequest(`/nodes/${id}/decision`, 'POST', {
+          attemptId: get().nodes.find((n) => n.id === id)?.currentAttemptId,
+          decision: 'approve',
+        }),
+      ),
+    requestChanges: (id, targetNodeId, feedback) =>
+      action(id, () =>
+        sessionRequest(`/nodes/${id}/decision`, 'POST', {
+          attemptId: get().nodes.find((n) => n.id === id)?.currentAttemptId,
+          decision: 'request_changes',
+          targetNodeId,
+          feedback,
+        }),
+      ),
+    runGraph: () => graphAction('run'),
+    resumeGraph: () => graphAction('resume'),
+    cancelGraph: () => graphAction('run/cancel'),
+    addTemplate: async (tpl) => {
+      const current = generation;
+      try {
+        await flushEdits();
+        requireSession(current);
+        await sessionRequest('/templates', 'POST', tpl);
+        requireSession(current);
+        await get().refresh();
+        requireSession(current);
+        return true;
+      } catch (error) {
+        if (current === generation) report(error);
+        return false;
+      }
+    },
+    applyTemplate: async (id, teamId) => {
+      const template = get().templates.find((t) => t.id === id);
+      const graph = get().graphContexts.find(
+        (g) => g.id === get().selectedGraphId && g.teamId === teamId,
+      );
+      if (!template || !graph || !get().canEdit(teamId)) return false;
+      const current = generation;
+      try {
+        await flushEdits();
+        requireSession(current);
+        const node = await sessionRequest<WorkerNode>(
+          '/nodes',
+          'POST',
+          templateDefinition(template, teamId, graph),
+        );
+        requireSession(current);
+        acceptCreatedNode(node);
+        await get().refresh();
+        requireSession(current);
+        get().selectNode(node.id);
+        return true;
+      } catch (error) {
+        if (current === generation) report(error);
+        return false;
+      }
+    },
+    toggleTemplatesDrawer: () =>
+      set({ showTemplatesDrawer: !get().showTemplatesDrawer }),
+    toggleSettings: () => set({ showSettings: !get().showSettings }),
+    exportProject: () => ({
+      version: get().version,
+      teams: get().teams,
+      nodes: get().nodes,
+      graphContexts: get().graphContexts,
+      templates: get().templates,
+    }),
+  }),
 );
-
-// Helper to get status color (exported for canvas use)
-export { nodeStatusColor };

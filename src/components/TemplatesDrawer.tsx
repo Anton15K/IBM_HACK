@@ -3,7 +3,7 @@ import type { Team } from '../types';
 
 // Only leaf teams (with space dimensions)
 function getLeafTeams(teams: Team[]): Team[] {
-  return teams.filter((t) => t.space.w > 0);
+  return teams.filter((t) => t.kind === 'team' && useStore.getState().canEdit(t.id));
 }
 
 export default function TemplatesDrawer() {
@@ -14,7 +14,8 @@ export default function TemplatesDrawer() {
   const teams = useStore((s) => s.teams);
 
   const leafTeams = getLeafTeams(teams);
-  const targetTeamId = selectedTeamId ?? leafTeams[0]?.id ?? '';
+  const targetTeamId = selectedTeamId ?? '';
+  const canApply = !!targetTeamId && useStore.getState().canEdit(targetTeamId) && !!useStore.getState().selectedGraphId;
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -71,10 +72,8 @@ export default function TemplatesDrawer() {
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    applyTemplate(tpl.id, targetTeamId);
-                    toggleTemplatesDrawer();
-                  }}
+                  disabled={!canApply}
+                  onClick={async () => { if (await applyTemplate(tpl.id, targetTeamId)) toggleTemplatesDrawer(); }}
                   className="shrink-0 px-2.5 py-1 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent text-[10px] font-semibold transition-colors"
                 >
                   Add
@@ -98,10 +97,8 @@ export default function TemplatesDrawer() {
                       <div className="text-muted text-[10px] mt-0.5 line-clamp-2">{tpl.description}</div>
                     </div>
                     <button
-                      onClick={() => {
-                        applyTemplate(tpl.id, targetTeamId);
-                        toggleTemplatesDrawer();
-                      }}
+                      disabled={!canApply}
+                      onClick={async () => { if (await applyTemplate(tpl.id, targetTeamId)) toggleTemplatesDrawer(); }}
                       className="shrink-0 px-2.5 py-1 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent text-[10px] font-semibold transition-colors"
                     >
                       Add

@@ -17,6 +17,9 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
   const approveGate = useStore((s) => s.approveGate);
   const nodes = useStore((s) => s.nodes);
   const teams = useStore((s) => s.teams);
+  const canEdit = useStore((s) => s.canEdit);
+  const busy = useStore((s) => s.busy.includes(node.id));
+  const editable = canEdit(node.teamId);
 
   const fullNode = nodes.find((n) => n.id === node.id) ?? node;
   const upstreamId = fullNode.inputs[0]?.fromNodeId;
@@ -58,14 +61,14 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
 
   const handleRequestChanges = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (upstreamId) useStore.getState().requestChanges(node.id, upstreamId);
+    selectNode(node.id);
   };
 
   // What to render in the fixed footer slot
   type FooterMode = 'approve' | 'run' | 'idle';
   let footerMode: FooterMode = 'idle';
-  if (isApproval) footerMode = 'approve';
-  else if (!isRunning && !isDone && !isBlocked) footerMode = 'run';
+  if (editable && !busy && isApproval && node.currentAttemptId) footerMode = 'approve';
+  else if (editable && !busy && !isRunning && node.type !== 'inbox' && node.status !== 'queued' && !isDone && !isBlocked) footerMode = 'run';
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -172,11 +175,11 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
           <div className="h-1.5 bg-line rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-200"
-              style={{ width: `${node.progress}%`, backgroundColor: color }}
+              style={{ width: isRunning ? '50%' : `${node.progress}%`, backgroundColor: color }}
             />
           </div>
           {isRunning && (
-            <div className="text-[10px] mt-0.5 text-right" style={{ color: '#B0BAD0' }}>{node.progress}%</div>
+            <div className="text-[10px] mt-0.5 text-right" style={{ color: '#B0BAD0' }}>Working on backend</div>
           )}
         </div>
       )}
@@ -235,8 +238,8 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
         )}
       </div>
 
-      <Handle type="target" position={Position.Left} style={{ top: '50%' }} />
-      <Handle type="source" position={Position.Right} style={{ top: '50%' }} />
+      <Handle isConnectable={editable} type="target" position={Position.Left} style={{ top: '50%' }} />
+      <Handle isConnectable={editable} type="source" position={Position.Right} style={{ top: '50%' }} />
     </div>
 
     {/* Right-click context menu */}
@@ -254,13 +257,15 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
             Open in Inspector
           </button>
           <button
-            onClick={() => { closeContextMenu(); runNode(node.id); }}
+            disabled={!editable || busy || isRunning || node.type === 'inbox' || node.status === 'queued'}
+            onClick={() => { closeContextMenu(); void runNode(node.id); }}
             className="w-full text-left px-3 py-1.5 text-xs text-accent hover:bg-line transition-colors"
           >
             ▶ Run Node
           </button>
           <div className="border-t border-line my-1" />
           <button
+            disabled={!editable || busy}
             onClick={() => { closeContextMenu(); setShowSendModal(true); }}
             className="w-full text-left px-3 py-1.5 text-xs text-muted hover:bg-line hover:text-ink transition-colors"
           >

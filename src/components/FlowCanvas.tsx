@@ -1,269 +1,192 @@
-import { useCallback, useEffect, useMemo, type MutableRefObject } from 'react';
-import StatusLegend from './StatusLegend';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
-  useReactFlow,
-  ReactFlowProvider,
-  addEdge,
+  Handle,
+  Position,
+  useNodesState,
   type Node,
   type Edge,
-  type Connection,
-  type NodeTypes,
-  useNodesState,
-  useEdgesState,
+  type NodeProps,
 } from '@xyflow/react';
 import { useStore } from '../store';
+import { boardNodes, ancestors } from '../client-helpers';
 import { WorkerNodeCard } from './WorkerNodeCard';
-import { TeamSpaceNode } from './TeamSpaceNode';
-import type { WorkerNode, Team } from '../types';
 import { statusColor } from '../utils/colors';
-
-const nodeTypes: NodeTypes = {
-  worker: WorkerNodeCard as NodeTypes[string],
-  teamSpace: TeamSpaceNode as NodeTypes[string],
-};
-
-// Node card dimensions (must match WorkerNodeCard CSS width + estimated max height)
-const NODE_W = 210; // must match w-[210px] in WorkerNodeCard
-const NODE_H = 160; // approximate max card height including footer
-const SPACE_PADDING_X = 60;  // left/right padding inside a space
-const SPACE_PADDING_TOP = 56; // header height
-const SPACE_PADDING_BOT = 32; // bottom padding
-
-interface Props {
-  panToTeamRef: MutableRefObject<((teamId: string) => void) | null>;
-}
-
-/**
- * Compute the space height required to contain its nodes comfortably.
- * Nodes are positioned with a fixed header offset already factored in (y + SPACE_PADDING_TOP).
- */
-function computeSpaceHeight(teamId: string, nodes: WorkerNode[]): number {
-  const teamNodes = nodes.filter((n) => n.teamId === teamId);
-  if (teamNodes.length === 0) return SPACE_PADDING_TOP + NODE_H + SPACE_PADDING_BOT;
-  const maxBottom = Math.max(...teamNodes.map((n) => n.position.y + NODE_H));
-  return SPACE_PADDING_TOP + maxBottom + SPACE_PADDING_BOT;
-}
-
-/**
- * Compute the space width required to contain its nodes with padding on both sides.
- * Ensures the rightmost card's right edge + SPACE_PADDING_X fits inside the container.
- */
-function computeSpaceWidth(teamId: string, nodes: WorkerNode[]): number {
-  const teamNodes = nodes.filter((n) => n.teamId === teamId);
-  if (teamNodes.length === 0) return SPACE_PADDING_X * 2 + NODE_W;
-  const maxRight = Math.max(...teamNodes.map((n) => n.position.x + NODE_W));
-  return SPACE_PADDING_X + maxRight + SPACE_PADDING_X;
-}
-
-function buildFlowNodes(teams: Team[], nodes: WorkerNode[]): Node[] {
-  const flowNodes: Node[] = [];
-
-  for (const team of teams) {
-    if (team.space.w <= 0) continue;
-    const h = computeSpaceHeight(team.id, nodes);
-    const w = computeSpaceWidth(team.id, nodes);
-    flowNodes.push({
-      id: `space-${team.id}`,
-      type: 'teamSpace',
-      position: { x: team.space.x, y: team.space.y },
-      // Pass dynamic width + height so the space container always fits its cards
-      data: { ...team, space: { ...team.space, w, h } },
-      draggable: false,
-      selectable: true,
-      style: { zIndex: -1 },
-    });
-  }
-
-  for (const n of nodes) {
-    const team = teams.find((t) => t.id === n.teamId);
-    const offsetX = (team?.space.x ?? 0) + SPACE_PADDING_X;
-    const offsetY = (team?.space.y ?? 0) + SPACE_PADDING_TOP;
-    flowNodes.push({
-      id: n.id,
-      type: 'worker',
-      position: {
-        x: offsetX + n.position.x,
-        y: offsetY + n.position.y,
-      },
-      data: { ...n },
-      draggable: true,
-    });
-  }
-
-  return flowNodes;
-}
-
-function buildFlowEdges(nodes: WorkerNode[]): Edge[] {
-  const edges: Edge[] = [];
-  for (const node of nodes) {
-    for (const inp of node.inputs) {
-      if (!inp.enabled) continue;
-      const sourceNode = nodes.find((n) => n.id === inp.fromNodeId);
-      const isRunning = sourceNode?.status === 'running';
-      const baseColor = sourceNode
-        ? statusColor(sourceNode.status, sourceNode.priority)
-        : '#3A4560';
-      edges.push({
-        id: `e-${inp.fromNodeId}-${node.id}`,
-        source: inp.fromNodeId,
-        target: node.id,
-        type: 'smoothstep',
-        animated: false,
-        className: isRunning ? 'running-edge' : undefined,
-        style: {
-          stroke: baseColor,
-          strokeWidth: isRunning ? 2.2 : 2,
-          opacity: 0.9,
-        },
-        markerEnd: {
-          type: 'arrowclosed' as const,
-          color: baseColor,
-          width: 22,
-          height: 22,
-        },
-      });
-    }
-  }
-  return edges;
-}
-
-function FlowInner({ panToTeamRef }: Props) {
-  const teams = useStore((s) => s.teams);
-  const storeNodes = useStore((s) => s.nodes);
-  const addStoreEdge = useStore((s) => s.addEdge);
-  const updateNode = useStore((s) => s.updateNode);
-  const selectNode = useStore((s) => s.selectNode);
-  const selectedNodeId = useStore((s) => s.selectedNodeId);
-
-  const initialFlowNodes = useMemo(() => buildFlowNodes(teams, storeNodes), []); // eslint-disable-line react-hooks/exhaustive-deps
-  const initialFlowEdges = useMemo(() => buildFlowEdges(storeNodes), []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(initialFlowNodes);
-  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(initialFlowEdges);
-
-  const { fitView } = useReactFlow();
-
-  useEffect(() => {
-    setFlowNodes(buildFlowNodes(teams, storeNodes));
-    setFlowEdges(buildFlowEdges(storeNodes));
-  }, [storeNodes, teams, setFlowNodes, setFlowEdges]);
-
-  useEffect(() => {
-    panToTeamRef.current = (teamId: string) => {
-      const team = teams.find((t) => t.id === teamId);
-      if (!team || team.space.w <= 0) return;
-      fitView({
-        nodes: [{ id: `space-${teamId}` }],
-        duration: 500,
-        padding: 0.15,
-      });
-    };
-  }, [teams, fitView, panToTeamRef]);
-
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target) return;
-      addStoreEdge(connection.source, connection.target);
-      setFlowEdges((eds) => addEdge(connection, eds));
-    },
-    [addStoreEdge, setFlowEdges]
-  );
-
-  const onNodeDragStop = useCallback(
-    (_event: unknown, node: Node) => {
-      if (node.type !== 'worker') return;
-      const storeNode = storeNodes.find((n) => n.id === node.id);
-      if (!storeNode) return;
-      const team = teams.find((t) => t.id === storeNode.teamId);
-      const offsetX = (team?.space.x ?? 0) + SPACE_PADDING_X;
-      const offsetY = (team?.space.y ?? 0) + SPACE_PADDING_TOP;
-      updateNode(node.id, {
-        position: {
-          x: node.position.x - offsetX,
-          y: node.position.y - offsetY,
-        },
-      });
-    },
-    [storeNodes, teams, updateNode]
-  );
-
-  const onNodeClick = useCallback(
-    (_event: unknown, node: Node) => {
-      if (node.type === 'worker') selectNode(node.id);
-    },
-    [selectNode]
-  );
-
-  const onPaneClick = useCallback(() => selectNode(null), [selectNode]);
-
-  const nodesWithSelection = useMemo(
-    () => flowNodes.map((n) => ({ ...n, selected: n.id === selectedNodeId })),
-    [flowNodes, selectedNodeId]
-  );
-
+import StatusLegend from './StatusLegend';
+function OrganizationCard({ data }: NodeProps) {
   return (
-    <ReactFlow
-      nodes={nodesWithSelection}
-      edges={flowEdges}
-      nodeTypes={nodeTypes}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onConnect={onConnect}
-      onNodeDragStop={onNodeDragStop}
-      onNodeClick={onNodeClick}
-      onPaneClick={onPaneClick}
-      fitView
-      fitViewOptions={{ padding: 0.12 }}
-      minZoom={0.1}
-      maxZoom={2}
-      deleteKeyCode={null}
-    >
-      {/* Dot grid — raised brightness so it's perceptible on dark canvas */}
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={22}
-        size={2}
-        color="#2A3550"
-      />
-      <Controls showInteractive={false} />
-      <MiniMap
-        nodeColor={(n) => {
-          if (n.type === 'teamSpace') return 'rgba(42,51,71,0.5)';
-          const storeNode = storeNodes.find((sn) => sn.id === n.id);
-          if (!storeNode) return '#4B5563';
-          return statusColor(storeNode.status, storeNode.priority);
-        }}
-        nodeStrokeColor={(n) => {
-          if (n.type === 'teamSpace') return '#3A4A62';
-          return 'transparent';
-        }}
-        nodeStrokeWidth={2}
-        // pannable + zoomable lets users click to navigate the main viewport
-        pannable
-        zoomable
-        maskColor="rgba(7,10,16,0.72)"
-        style={{
-          background: '#0a0d14',
-          border: '1px solid #2A3347',
-          borderRadius: 14,
-        }}
-      />
-    </ReactFlow>
+    <div className="bg-card border border-line rounded-[14px] p-5 w-[230px] shadow-panel">
+      <Handle type="target" position={Position.Left} />
+      <div className="text-accent text-[10px] uppercase tracking-widest mb-2">
+        {String(data.kind ?? 'team')}
+      </div>
+      <div className="text-ink font-semibold">{String(data.name)}</div>
+      <p className="text-muted text-[11px] mt-2">
+        {data.kind !== 'team'
+          ? 'Open departments & teams →'
+          : 'Open task board →'}
+      </p>
+      <Handle type="source" position={Position.Right} />
+    </div>
   );
 }
-
-export default function FlowCanvas({ panToTeamRef }: Props) {
+const types = { worker: WorkerNodeCard, organization: OrganizationCard };
+function Canvas() {
+  const state = useStore();
+  const dragging = useRef(new Set<string>());
+  const activeNodes = boardNodes(
+    state.nodes,
+    state.selectedTeamId,
+    state.selectedGraphId,
+  );
+  const children = state.teams.filter((t) => t.parentId === state.navigationId);
+  const board = !!state.selectedTeamId;
+  const editable = board && state.canEdit(state.selectedTeamId!);
+  const nodes: Node[] = board
+    ? activeNodes.map((n) => ({
+        id: n.id,
+        type: 'worker',
+        position: n.position,
+        data: { ...n },
+        selected: n.id === state.selectedNodeId,
+        draggable: !!editable,
+      }))
+    : children.map((t, i) => ({
+        id: t.id,
+        type: 'organization',
+        position: { x: 80 + (i % 3) * 310, y: 80 + Math.floor(i / 3) * 210 },
+        data: { ...t },
+        draggable: false,
+      }));
+  const edges: Edge[] = board
+    ? activeNodes.flatMap((n) =>
+        n.inputs
+          .filter(
+            (i) => i.enabled && activeNodes.some((s) => s.id === i.fromNodeId),
+          )
+          .map((i) => {
+            const source = activeNodes.find((s) => s.id === i.fromNodeId)!;
+            return {
+              id: `${i.fromNodeId}:${n.id}`,
+              source: i.fromNodeId,
+              target: n.id,
+              type: 'smoothstep',
+              style: {
+                stroke: statusColor(source.status, source.priority),
+                strokeWidth: 2,
+              },
+              label: undefined,
+            };
+          }),
+      )
+    : [];
+  if (!board) {
+    const atLevel = (teamId: string) =>
+      ancestors(state.teams, teamId).find((t) =>
+        children.some((c) => c.id === t.id),
+      )?.id;
+    const seen = new Set<string>();
+    for (const n of state.nodes)
+      if (n.inboxMeta) {
+        const source = atLevel(n.inboxMeta.sourceTeamId);
+        const target = atLevel(n.teamId);
+        const id = `${source}:${target}`;
+        if (source && target && source !== target && !seen.has(id)) {
+          seen.add(id);
+          edges.push({
+            id,
+            source,
+            target,
+            type: 'smoothstep',
+            label: 'Handoff',
+            style: { stroke: '#5B8CFF' },
+          });
+        }
+      }
+  }
+  const [flow, setFlow, onNodesChange] = useNodesState(nodes);
+  useEffect(() => {
+    setFlow((current) =>
+      nodes.map((n) =>
+        dragging.current.has(n.id)
+          ? {
+              ...n,
+              position:
+                current.find((c) => c.id === n.id)?.position ?? n.position,
+            }
+          : n,
+      ),
+    );
+  }, [
+    state.nodes,
+    state.teams,
+    state.selectedNodeId,
+    state.selectedGraphId,
+    editable,
+  ]);
+  return (
+    <>
+      <ReactFlow
+        nodes={flow}
+        edges={edges}
+        nodeTypes={types}
+        onNodesChange={onNodesChange}
+        nodesConnectable={!!editable}
+        nodesDraggable={!!editable}
+        deleteKeyCode={null}
+        onConnect={(c) => {
+          if (editable && c.source && c.target)
+            state.addEdge(c.source, c.target);
+        }}
+        onEdgeDoubleClick={(_, edge) => {
+          if (editable) state.removeEdge(edge.source, edge.target);
+        }}
+        onNodeClick={(_, node) =>
+          board ? state.selectNode(node.id) : state.navigate(node.id)
+        }
+        onPaneClick={() => state.selectNode(null)}
+        onNodeDragStart={(_, node) => dragging.current.add(node.id)}
+        onNodeDragStop={(_, node) => {
+          dragging.current.delete(node.id);
+          state.updateNode(node.id, { position: node.position });
+        }}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.15}
+        maxZoom={2}
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={22}
+          size={2}
+          color="#2A3550"
+        />
+        <Controls showInteractive={false} />
+        <MiniMap
+          nodeColor={board ? '#5B8CFF' : '#27344A'}
+          maskColor="rgba(7,10,16,.72)"
+        />
+      </ReactFlow>
+      {!nodes.length && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-muted text-sm">
+          {board
+            ? 'No tasks in this project. Create a task or apply a template.'
+            : 'No departments or teams at this level.'}
+        </div>
+      )}
+      {board && <StatusLegend />}
+    </>
+  );
+}
+export default function FlowCanvas() {
   return (
     <ReactFlowProvider>
-      <div className="w-full h-full relative">
-        <FlowInner panToTeamRef={panToTeamRef} />
-        <StatusLegend />
-      </div>
+      <Canvas />
     </ReactFlowProvider>
   );
 }
