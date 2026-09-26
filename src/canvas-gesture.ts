@@ -29,6 +29,9 @@ export class PlacementGesture {
   consume(x: number, y: number) {
     const g = this.gesture;
     this.cancel();
-    return !!g && g.valid && g.released && g.endX === x && g.endY === y;
+    // Browsers may floor click coordinates while pointerup keeps fractions.
+    const matches = (pointer: number | undefined, click: number) =>
+      pointer !== undefined && (pointer === click || Math.floor(pointer) === click);
+    return !!g && g.valid && g.released && matches(g.endX, x) && matches(g.endY, y);
   }
 }

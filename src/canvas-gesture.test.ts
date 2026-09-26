@@ -44,3 +44,21 @@ test('cancel, unmatched pointer, missing release and non-pane release reject pla
   g.end(1, 10, 10, false);
   assert.equal(g.consume(10, 10), false);
 });
+
+
+test('a fractional pointer release accepts browser-floored click coordinates once', () => {
+  for (const [x, y] of [[330.5, 280.75], [-0.25, -1.75]]) {
+    const g = new PlacementGesture();
+    g.start(1, x, y, true);
+    g.end(1, x, y, true);
+    assert.equal(g.consume(Math.floor(x), Math.floor(y)), true);
+    assert.equal(g.consume(Math.floor(x), Math.floor(y)), false);
+  }
+});
+
+test('rounding compatibility still rejects a different click location', () => {
+  const g = new PlacementGesture();
+  g.start(1, 330.5, 280.75, true);
+  g.end(1, 330.5, 280.75, true);
+  assert.equal(g.consume(331, 280), false);
+});
