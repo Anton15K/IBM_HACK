@@ -1,5 +1,14 @@
 # TeamWeave
 
+## Demo
+
+**Live demo:** https://anton15k.github.io/IBM_HACK/
+
+Local dev: `npm run dev` · Production build: `npm run build`
+
+> **Note:** Bob Gateway features require a locally running gateway (`npm run gateway`). The hosted demo uses simulated/mock executors.
+
+
 > **Miro for orchestrating AI-agent teams** — an infinite-canvas B2B web application where your organization's departments and teams each get a dedicated "space" on the canvas. Inside each space, you build directed graphs of agent-worker nodes: Inbox nodes that ingest research, Worker nodes that execute tasks, and Gate nodes that pause the flow for human review. Teams can run graphs with a single click, watch nodes execute in topological order (with gates pausing for approval), and inspect every node's prompt, context, executor config, and output in the right-side inspector panel.
 
 ## Stack
