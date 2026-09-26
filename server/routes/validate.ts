@@ -18,7 +18,7 @@ import type { WorkerNode, WorkspaceBinding } from '../../src/types.js';
 
 export const NODE_TYPES = new Set<string>(['worker', 'gate', 'inbox']);
 export const PRIORITIES  = new Set<string>(['low', 'normal', 'high', 'critical']);
-export const PROVIDERS   = new Set<string>(['bob', 'openai', 'anthropic', 'google', 'mock']);
+export const PROVIDERS   = new Set<string>(['bob', 'openai', 'anthropic', 'google', 'mock', 'api']);
 export const DESIRED_OUTPUTS = new Set<string>(['report', 'patch', 'commit', 'pull_request']);
 
 /**
@@ -139,6 +139,22 @@ export function validateExecutor(v: unknown): string | null {
         (e.maxAttempts as number) < 1 ||
         (e.maxAttempts as number) > 10)
       return 'executor.maxAttempts must be an integer between 1 and 10';
+  }
+
+  // connectionId (required when provider='api', optional otherwise)
+  if (e.provider === 'api') {
+    if (typeof e.connectionId !== 'string' || e.connectionId.trim().length === 0)
+      return 'executor.connectionId is required when provider is api';
+  }
+  if (e.connectionId !== undefined && typeof e.connectionId !== 'string')
+    return 'executor.connectionId must be a string';
+
+  // maxOutputTokens (optional; 64–4096)
+  if (e.maxOutputTokens !== undefined) {
+    if (!Number.isInteger(e.maxOutputTokens) ||
+        (e.maxOutputTokens as number) < 64 ||
+        (e.maxOutputTokens as number) > 4096)
+      return 'executor.maxOutputTokens must be an integer between 64 and 4096';
   }
 
   return null;

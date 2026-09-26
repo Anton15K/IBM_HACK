@@ -62,6 +62,8 @@ type BobEvent = BobResultEvent | BobErrorEvent;
 
 
 export interface ExecuteTaskInput {
+  /** Trusted tenant from runtime, never from node definition. */
+  orgId?: string;
   attemptId?: string;
   onPrepared?: (prepared: {workspaceBefore: WorkspaceSnapshot | null; assembledPrompt: string}) => void;
   node: WorkerNode;
@@ -320,7 +322,7 @@ export async function executeTask(input: ExecuteTaskInput): Promise<ExecuteTaskR
     return {
       status: 'failed',
       simulated: false,
-      error: `Provider '${provider}' is not supported. Supported providers: bob, mock.`,
+      error: `Provider '${provider}' is not supported by the legacy executor. Supported providers: bob, mock.`,
       taskId: null,
       sessionCosts: null,
       identity,

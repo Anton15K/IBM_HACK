@@ -1,3 +1,7 @@
+import { ModelService, modelConnectionsRoutes } from './models.js';
+import { executeTask } from './executor.js';
+import { executeApiTask } from './apiExecutor.js';
+import { plannerRoutes } from './routes/planner.js';
 import { Runtime, type Executor } from './runtime.js';
 import { runtimeRoutes } from './routes/runtime.js';
 import Fastify from 'fastify';
@@ -20,6 +24,7 @@ const ALLOWED_ORIGINS = new Set([
   'http://127.0.0.1:5173',
   'http://localhost:7142',
   'http://127.0.0.1:7142',
+  ...(process.env.TEAMWEAVE_FRONTEND_ORIGIN ? [new URL(process.env.TEAMWEAVE_FRONTEND_ORIGIN).origin] : []),
 ]);
 
 declare module 'fastify' {
@@ -34,6 +39,7 @@ export interface BuildAppOptions {
   /** Injected for tests to control capabilities response without real env/files */
   capabilitiesOptions?: CapabilitiesOptions;
   executor?: Executor;
+  modelOptions?: { fetchFn?: typeof fetch; masterKey?: Buffer; allowedHosts?: string[] };
 }
 
 export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fastify> {
@@ -47,7 +53,12 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
 
   // Decorate with db instance
   app.decorate('db', db);
-  const runtime = new Runtime(db, options.executor);
+  const modelService = new ModelService(db, dbPath, options.modelOptions?.masterKey, options.modelOptions?.allowedHosts);
+  const runtime = new Runtime(db, options.executor ?? (input => input.node.executor.provider === 'api'
+    ? executeApiTask({ input, orgId: input.orgId!, connectionId: input.node.executor.connectionId!, modelService, fetchFn: options.modelOptions?.fetchFn })
+    : executeTask(input)));
+  app.register(modelConnectionsRoutes, { modelService });
+  app.register(plannerRoutes, { modelService, fetchFn: options.modelOptions?.fetchFn });
   app.decorate('runtime', runtime);
 
   // Close DB on app close
@@ -90,7 +101,7 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
   app.register(runtimeRoutes);
   app.register(graphsRoutes);
   app.register(templatesRoutes);
-  app.register(makeCapabilitiesRoutes(options.capabilitiesOptions ?? {}));
+  app.register(makeCapabilitiesRoutes({ ...options.capabilitiesOptions, modelHosts: modelService.getAllowedHosts() }));
 
   return app;
 }

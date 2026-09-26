@@ -3,6 +3,7 @@ import { resolveSession } from '../session.js';
 import { isBobConfigured, DEFAULT_MAX_COST, MAX_ALLOWED_COST } from '../executor.js';
 
 export interface CapabilitiesOptions {
+  modelHosts?: string[];
   /** Override for tests (avoids reading ~/.bob/api_key in unit tests) */
   bobConfiguredOverride?: boolean;
   /** Override TEAMWEAVE_WORKSPACE_ROOTS for tests */
@@ -24,7 +25,9 @@ export function makeCapabilitiesRoutes(opts: CapabilitiesOptions = {}) {
       const workspaceRootsConfigured = workspaceRootsEnv.trim().length > 0;
 
       return reply.send({
-        providers: ['bob', 'mock'],
+        providers: ['bob', 'mock', 'api'],
+        modelHosts: opts.modelHosts ?? ['api.z.ai', 'api.openai.com'],
+        apiLimits: { maxOutputTokens: 4096, maxIterations: 8 },
         outputModes: ['report', 'patch'],
         bobConfigured,
         workspaceRootsConfigured,

@@ -1,6 +1,9 @@
+import { useState } from 'react';
+import PlannerModal from './PlannerModal';
 import { useStore } from '../store';
 export default function TopBar() {
   const state = useStore();
+  const [planningGraph, setPlanningGraph] = useState<string | null>(null);
   const editable = state.selectedTeamId && state.canEdit(state.selectedTeamId);
   const busy = state.busy.includes(`graph:${state.selectedGraphId}`);
   return (
@@ -15,8 +18,10 @@ export default function TopBar() {
         {state.auth?.organization.name}
       </span>
       <div className="flex-1" />
+      {planningGraph && planningGraph === state.selectedGraphId && editable && <PlannerModal key={planningGraph} graphId={planningGraph} close={() => setPlanningGraph(null)} />}
       {editable && (
         <>
+          <button className="small-button" disabled={!state.selectedGraphId} onClick={() => setPlanningGraph(state.selectedGraphId)}>AI plan</button>
           <button
             disabled={
               !state.selectedGraphId || state.busy.includes('createNode')

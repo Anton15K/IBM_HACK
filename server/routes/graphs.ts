@@ -18,8 +18,12 @@ export async function graphsRoutes(app: FastifyInstance): Promise<void> {
     if (typeof body.teamId !== 'string' || typeof body.name !== 'string' || !body.name.trim() ||
         (body.goal !== undefined && typeof body.goal !== 'string'))
       return reply.status(400).send({ error: 'teamId and name required; goal must be a string' });
+    if (!body.workspace) return reply.status(400).send({ error: 'Project workspace path, branch and ref are required' });
+    const wsErr = validateWorkspaceBinding(body.workspace);
+    if (wsErr) return reply.status(400).send({ error: wsErr });
+    const ws = body.workspace as { path: string; branch: string; ref: string };
     const teamId = body.teamId;
-    const graph: GraphContext = { id: randomUUID(), teamId, name: body.name.trim(), goal: body.goal as string ?? '', repo: '', conventions: '' };
+    const graph: GraphContext = { id: randomUUID(), teamId, name: body.name.trim(), goal: body.goal as string ?? '', repo: '', conventions: '', workspace: { path: ws.path.trim(), branch: ws.branch.trim(), ref: ws.ref.trim() } };
     const { revision } = mutateProject(db, sess.orgId, p => {
       if (!p.teams.some(t => t.id === teamId)) throw Object.assign(new Error('Team not found'), { statusCode: 404 });
       if (!requireTeamAccess(db, sess.userId, sess.orgId, teamId, 'edit')) throw Object.assign(new Error('Editor access required'), { statusCode: 403 });

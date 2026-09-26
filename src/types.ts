@@ -10,7 +10,7 @@ export type NodeStatus =
   | 'needs_approval';
 
 export type Priority = 'low' | 'normal' | 'high' | 'critical';
-export type Provider = 'bob' | 'openai' | 'anthropic' | 'google' | 'mock';
+export type Provider = 'bob' | 'openai' | 'anthropic' | 'google' | 'mock' | 'api';
 
 export interface HistoryEntry {
   ts: string;
@@ -30,6 +30,8 @@ export interface HistoryEntry {
   workspaceBefore?: string;
   /** Workspace fingerprint captured after execution */
   workspaceAfter?: string;
+  /** Token usage from API provider */
+  apiUsage?: ApiTokenUsage;
 }
 
 /**
@@ -68,6 +70,10 @@ export interface WorkerNode {
     maxCost?: number;
     /** Maximum execution attempts (integer 1–10; default 3) */
     maxAttempts?: number;
+    /** API model connection id (required when provider='api') */
+    connectionId?: string;
+    /** Maximum output tokens for API provider (64–4096; default 1024) */
+    maxOutputTokens?: number;
   };
   context: {
     files: { path: string; kind: 'glob' | 'file' }[];
@@ -149,6 +155,15 @@ export interface AttemptIdentity {
   ts: string;
 }
 
+/** Token usage from an API provider call */
+export interface ApiTokenUsage {
+  /** At least one upstream response omitted usage; totals cover only known calls. */
+  incomplete?: boolean;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 /** Lightweight metadata attached to a completed or failed attempt */
 export interface AttemptMeta {
   provider: Provider;
@@ -162,6 +177,8 @@ export interface AttemptMeta {
   sessionCosts: number | null;
   workspaceBefore?: string;
   workspaceAfter?: string;
+  /** Token usage from API provider (undefined when not applicable) */
+  apiUsage?: ApiTokenUsage;
 }
 
 export interface Team {

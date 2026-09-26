@@ -84,12 +84,21 @@ export default function Sidebar() {
                 const generation = sessionGeneration();
                 setError('');
                 const form = e.currentTarget;
-                const data = Object.fromEntries(new FormData(form));
+                const fd = Object.fromEntries(new FormData(form)) as Record<string, string>;
+                const { name, goal, wsPath, wsBranch, wsRef } = fd;
+                const body: Record<string, unknown> = { name, goal, teamId: state.selectedTeamId };
+                if (wsPath?.trim() && wsBranch?.trim()) {
+                  body.workspace = {
+                    path: wsPath.trim(),
+                    branch: wsBranch.trim(),
+                    ref: (wsRef?.trim() || 'HEAD'),
+                  };
+                }
                 try {
                   const created = await sessionRequest<GraphContext>(
                     '/graphs',
                     'POST',
-                    { ...data, teamId: state.selectedTeamId },
+                    body,
                   );
                   requireSession(generation);
                   acceptCreatedGraph(created);
@@ -109,6 +118,30 @@ export default function Sidebar() {
                 placeholder="Project name"
               />
               <input name="goal" className="form-input" placeholder="Goal" />
+              <div className="text-muted text-[10px] uppercase mt-1">Git workspace on backend host</div>
+              <input
+                name="wsPath"
+                className="form-input"
+                required
+                placeholder="/absolute/path/to/existing/worktree"
+              />
+              <input
+                name="wsBranch"
+                className="form-input"
+                required
+                placeholder="Branch (currently checked out)"
+              />
+              <input
+                name="wsRef"
+                required
+                className="form-input"
+                defaultValue="HEAD"
+                placeholder="Ref (HEAD)"
+              />
+              <p className="text-muted text-[10px]">
+                Absolute path on the backend host. Does not create folders or
+                switch branches.
+              </p>
               <button className="action-button">Create Project</button>
               {error && <p className="text-err">{error}</p>}
             </form>

@@ -189,11 +189,11 @@ test('graph rework rounds bounded independently from configured worker attempts'
 
 test('graph creation requires own-org editor and preserves independent project name', async t => {
   const f = fixture([]); t.after(() => f.app.close());
-  const result = await f.request('POST', '/api/graphs', { teamId: 't', name: 'Second project', goal: 'Independent' });
+  const result = await f.request('POST', '/api/graphs', { teamId: 't', name: 'Second project', goal: 'Independent', workspace: { path: '/tmp/project', branch: 'main', ref: 'HEAD' } });
   assert.equal(result.statusCode, 201); const graph = result.json(); assert.notEqual(graph.id, 'g'); assert.equal(graph.name, 'Second project');
   assert.equal((await f.request('PATCH', `/api/graphs/${graph.id}`, { name: 'Renamed' })).json().name, 'Renamed');
-  assert.equal((await f.request('POST', '/api/graphs', { teamId: 't', name: 'Denied' }, 'viewer')).statusCode, 403);
-  assert.equal((await f.request('POST', '/api/graphs', { teamId: 'foreign', name: 'Denied' })).statusCode, 404);
+  assert.equal((await f.request('POST', '/api/graphs', { teamId: 't', name: 'Denied', workspace: { path: '/tmp/project', branch: 'main', ref: 'HEAD' } }, 'viewer')).statusCode, 403);
+  assert.equal((await f.request('POST', '/api/graphs', { teamId: 'foreign', name: 'Denied', workspace: { path: '/tmp/project', branch: 'main', ref: 'HEAD' } })).statusCode, 404);
 });
 
 
