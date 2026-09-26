@@ -88,9 +88,12 @@ export interface WorkerNode {
   inboxMeta?: {
     sourceNodeId: string;
     sourceTeamId: string;
+    sourceAttemptId?: string;
+    sourceOutput?: WorkerNode['output'];
     message: string;
   };
   history: HistoryEntry[];
+  currentAttemptId?: string;
   templateId?: string;
   /** Desired output mode for the runner (set at authoring time) */
   desiredOutput?: 'report' | 'patch' | 'commit' | 'pull_request';
@@ -173,6 +176,7 @@ export interface Team {
 
 export interface GraphContext {
   id: string;
+  name?: string;
   teamId: string;
   goal: string;
   /** Descriptive repository identifier (e.g. "org/repo" or a URL).

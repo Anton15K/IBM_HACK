@@ -26,7 +26,7 @@ export const DESIRED_OUTPUTS = new Set<string>(['report', 'patch', 'commit', 'pu
  * create or patch payloads.
  */
 export const SERVER_ONLY_NODE_KEYS = new Set([
-  'status', 'progress', 'output', 'history', 'id', 'version', 'inboxMeta',
+  'status', 'progress', 'output', 'history', 'id', 'version', 'inboxMeta', 'currentAttemptId', 'runId',
 ]);
 
 /**

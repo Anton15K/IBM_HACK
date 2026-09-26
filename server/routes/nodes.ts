@@ -16,7 +16,7 @@ import {
 // Patchable fields — server controls id/teamId/graphId/status/output/history/progress/version
 const PATCHABLE = new Set([
   'name', 'type', 'prompt', 'executor', 'context', 'owners',
-  'inputs', 'position', 'priority', 'desiredOutput', 'templateId', 'inboxMeta', 'workspace',
+  'inputs', 'position', 'priority', 'desiredOutput', 'templateId', 'workspace',
 ]);
 
 function defaultNode(overrides: Partial<WorkerNode> & { id: string; teamId: string; graphId: string; name: string }): WorkerNode {
@@ -137,6 +137,9 @@ export async function nodesRoutes(app: FastifyInstance): Promise<void> {
       if (graph.teamId !== teamId)
         throw Object.assign(new Error('GraphContext does not belong to specified team'), { statusCode: 400 });
 
+      if (app.runtime.graphActive(sess.orgId, graphId))
+        throw Object.assign(new Error('Cannot add nodes during an active graph run'), { statusCode: 409 });
+
       // Parse inputs (already validated above)
       const inputs: { fromNodeId: string; enabled: boolean }[] = Array.isArray(body.inputs)
         ? (body.inputs as { fromNodeId: string; enabled: boolean }[])
@@ -235,6 +238,10 @@ export async function nodesRoutes(app: FastifyInstance): Promise<void> {
           !requireTeamAccess(db, sess.userId, sess.orgId, node.teamId, 'edit'))
         throw Object.assign(new Error('Editor access required'), { statusCode: 403 });
 
+      if ((app.runtime.graphActive(sess.orgId, node.graphId) || app.runtime.nodeActive(sess.orgId, id)) &&
+          ['inputs', 'type', 'owners', 'workspace'].some(key => key in body))
+        throw Object.assign(new Error('Cannot change active topology, type, ownership or workspace'), { statusCode: 409 });
+
       // author cannot be changed via PATCH
       if (body.owners !== undefined) {
         const newOwners = body.owners as Record<string, unknown>;
@@ -300,6 +307,9 @@ export async function nodesRoutes(app: FastifyInstance): Promise<void> {
       if (!isAdmin(db, sess.userId, sess.orgId) &&
           !requireTeamAccess(db, sess.userId, sess.orgId, node.teamId, 'edit'))
         throw Object.assign(new Error('Editor access required'), { statusCode: 403 });
+
+      if (app.runtime.graphActive(sess.orgId, node.graphId) || app.runtime.nodeActive(sess.orgId, id))
+        throw Object.assign(new Error('Cannot delete an active node or graph topology'), { statusCode: 409 });
 
       // Remove node and strip all references to it in inputs
       const nodes = p.nodes

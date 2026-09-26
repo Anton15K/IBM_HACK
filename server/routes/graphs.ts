@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import type { GraphContext } from '../../src/types.js';
@@ -7,6 +8,25 @@ import { validateWorkspaceBinding } from './validate.js';
 
 export async function graphsRoutes(app: FastifyInstance): Promise<void> {
   const db: DatabaseSync = app.db;
+
+  app.post('/api/graphs', async (req, reply) => {
+    const sess = resolveSession(db, req, reply);
+    if (!sess) return;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))
+      return reply.status(400).send({ error: 'Request body must be a JSON object' });
+    const body = req.body as Record<string, unknown>;
+    if (typeof body.teamId !== 'string' || typeof body.name !== 'string' || !body.name.trim() ||
+        (body.goal !== undefined && typeof body.goal !== 'string'))
+      return reply.status(400).send({ error: 'teamId and name required; goal must be a string' });
+    const teamId = body.teamId;
+    const graph: GraphContext = { id: randomUUID(), teamId, name: body.name.trim(), goal: body.goal as string ?? '', repo: '', conventions: '' };
+    const { revision } = mutateProject(db, sess.orgId, p => {
+      if (!p.teams.some(t => t.id === teamId)) throw Object.assign(new Error('Team not found'), { statusCode: 404 });
+      if (!requireTeamAccess(db, sess.userId, sess.orgId, teamId, 'edit')) throw Object.assign(new Error('Editor access required'), { statusCode: 403 });
+      return { ...p, graphContexts: [...p.graphContexts, graph] };
+    });
+    return reply.status(201).send({ ...graph, revision });
+  });
 
   // ------------------------------------------------------------------
   // PATCH /api/graphs/:id — update graph context
@@ -38,7 +58,12 @@ export async function graphsRoutes(app: FastifyInstance): Promise<void> {
           !requireTeamAccess(db, sess.userId, sess.orgId, graph.teamId, 'edit'))
         throw Object.assign(new Error('Editor access required'), { statusCode: 403 });
 
+      if ('workspace' in body && (app.runtime.graphActive(sess.orgId, id) || p.nodes.some(n => n.graphId === id && app.runtime.nodeActive(sess.orgId, n.id))))
+        throw Object.assign(new Error('Cannot change workspace during active execution'), { statusCode: 409 });
+      if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim()))
+        throw Object.assign(new Error('name must be a non-empty string'), { statusCode: 400 });
       const updated: GraphContext = { ...graph };
+      if (typeof body.name === 'string') updated.name = body.name.trim();
       if (typeof body.goal === 'string') updated.goal = body.goal;
       if (typeof body.repo === 'string') updated.repo = body.repo;
       if (typeof body.conventions === 'string') updated.conventions = body.conventions;

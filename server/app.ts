@@ -1,3 +1,5 @@
+import { Runtime, type Executor } from './runtime.js';
+import { runtimeRoutes } from './routes/runtime.js';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import type { DatabaseSync } from 'node:sqlite';
@@ -31,6 +33,7 @@ export interface BuildAppOptions {
   logger?: boolean | object;
   /** Injected for tests to control capabilities response without real env/files */
   capabilitiesOptions?: CapabilitiesOptions;
+  executor?: Executor;
 }
 
 export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fastify> {
@@ -44,11 +47,13 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
 
   // Decorate with db instance
   app.decorate('db', db);
+  const runtime = new Runtime(db, options.executor);
+  app.decorate('runtime', runtime);
 
   // Close DB on app close
-  app.addHook('onClose', (_instance, done) => {
-    try { db.close(); } catch { /* ignore */ }
-    done();
+  app.addHook('onClose', async () => {
+    await runtime.close();
+    db.close();
   });
 
   // Register cookie plugin
@@ -82,6 +87,7 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
   app.register(projectRoutes);
   app.register(teamsRoutes);
   app.register(nodesRoutes);
+  app.register(runtimeRoutes);
   app.register(graphsRoutes);
   app.register(templatesRoutes);
   app.register(makeCapabilitiesRoutes(options.capabilitiesOptions ?? {}));
