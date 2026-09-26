@@ -2,10 +2,13 @@
 
 ## Provider calls
 
-- Use the **Mock provider** for all demos, tests, and exploratory work; never
-  route test traffic to paid model APIs.
-- Every `bob run` or task invocation must include an explicit `--max-cost` cap.
-  Default cap for this repo: **$0.50** per task unless the task spec states otherwise.
+- Use the **Mock provider** for demos, tests, and exploratory work. Paid Bob
+  runs are reserved for deliberate, pre-authorized execution (e.g. a one-off
+  real-run rehearsal specified in the task itself); never route test traffic
+  to paid model APIs.
+- Every `bob run` or task invocation must include an explicit `--max-cost` cap,
+  denominated in **Bobcoins** (not USD). Default cap for this repo:
+  **0.50 Bobcoins** per task unless the task spec states otherwise.
 - Batch tool calls; do not fragment work into many small requests.
 
 ## Secrets handling

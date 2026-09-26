@@ -9,7 +9,7 @@ It contains MCP server configuration, project rules, and reusable task skills.
 
 | Artifact | What it does | How Bob uses it | How to try it |
 |---|---|---|---|
-| `mcp.json` | Registers two stdio MCP servers (`filesystem`, `memory`) at workspace scope | Loaded automatically by Bob Shell when the workspace is open; tools become available in every session | `bob mcp list` |
+| `mcp.json` | Registers two stdio MCP servers (`filesystem`, `memory`) at workspace scope | Loaded automatically by the Bob **IDE** when the workspace is open (CLI: `bob mcp list` shows them); tools become available in every session | `bob mcp list` |
 | `rules/project.md` | Describes TeamWeave, repo layout, and the four-command verification bar | Reference in a task prompt: `rules: .bob/rules/project.md` | Open the file; include it in any task |
 | `rules/safety.md` | Spend discipline, secrets policy, Mock-provider requirement | Reference in a task prompt: `rules: .bob/rules/safety.md` | Open the file; include it in any task |
 | `rules/checkout.md` | Branch naming, conventional commits, PR + review gate | Reference in a task prompt: `rules: .bob/rules/checkout.md` | Open the file; include it in any task |
@@ -21,7 +21,7 @@ It contains MCP server configuration, project rules, and reusable task skills.
 
 ## Honest framing
 
-**`mcp.json`** is the only file Bob Shell loads *automatically* — it wires up
+**`mcp.json`** is the only file the Bob **IDE** loads *automatically* — it wires up
 the `filesystem` and `memory` MCP servers whenever Bob opens this workspace.
 
 **Rules and skills** are *loaded by reference* in task prompts. Bob does not
@@ -31,7 +31,7 @@ auto-inject them; you (or the agent) must explicitly name them. Example:
 Task: fix the auth token expiry bug
 rules: .bob/rules/project.md, .bob/rules/safety.md
 skill: .bob/skills/bobcoin-discipline/SKILL.md
---max-cost 0.50
+--max-cost 0.50   # Bobcoins
 ```
 
 ---
