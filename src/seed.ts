@@ -94,9 +94,9 @@ export const SEED_PROJECT: Project = {
       teamId: 'team-security',
       type: 'worker',
       name: 'Exploit Analysis',
-      status: 'running',
+      status: 'queued',
       priority: 'critical',
-      progress: 55,
+      progress: 0,
       position: { x: 380, y: 160 },
       prompt: {
         task: 'Analyze the vulnerabilities found in recon phase. Write proof-of-concept exploits for the top 3 findings.',

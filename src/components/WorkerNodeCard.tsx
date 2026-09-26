@@ -116,8 +116,8 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
           <div className="flex items-center gap-1">
             {/* Critical flag icon */}
             {isCritical && (
-              <svg width="10" height="11" viewBox="0 0 10 11" fill="none" aria-label="Critical priority">
-                <title>Critical priority</title>
+              <svg width="10" height="11" viewBox="0 0 10 11" fill="none" aria-label="CRITICAL">
+                <title>CRITICAL</title>
                 <path d="M5 1L5 6.5" stroke="#F87171" strokeWidth="1.5" strokeLinecap="round" />
                 <circle cx="5" cy="9" r="1" fill="#F87171" />
               </svg>
@@ -125,7 +125,7 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
             {/* Priority badge — only show if not critical (critical has the stripe + flag) */}
             {!isCritical && (
               <span
-                className="text-[10px] font-medium px-1.5 py-0.5 rounded-md leading-tight capitalize"
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-md leading-tight uppercase tracking-wide"
                 style={{
                   backgroundColor: `${priorityColor(node.priority)}25`,
                   color: priorityColor(node.priority),
