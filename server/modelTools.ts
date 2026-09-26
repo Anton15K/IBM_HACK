@@ -18,6 +18,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { writeFile, lstat, open, opendir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 
@@ -81,7 +82,10 @@ export async function toolListFiles(args: Record<string, unknown>, workspaceRoot
   }
   try { await visit(check.resolved); }
   catch { return 'Error: directory is unavailable'; }
-  return Buffer.from(entries.join('\n') || '(empty directory)').subarray(0, MAX_TOOL_OUTPUT_BYTES).toString('utf8');
+  // Leave an incomplete trailing UTF-8 character buffered rather than emitting a replacement.
+  return new StringDecoder('utf8').write(
+    Buffer.from(entries.join('\n') || '(empty directory)').subarray(0, MAX_TOOL_OUTPUT_BYTES),
+  );
 }
 
 export async function toolReadFile(args: Record<string, unknown>, workspaceRoot: string): Promise<string> {
