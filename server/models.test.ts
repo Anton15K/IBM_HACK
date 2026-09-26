@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { buildApp } from './app.js';
 import { ModelService, validateBaseUrl } from './models.js';
-import { executeApiTask, fetchBounded } from './apiExecutor.js';
+import { executeApiTask, fetchBounded, providerHttpError } from './apiExecutor.js';
 import { dispatchTool, toolReadFile, toolWriteFile, toolListFiles, toolRunTests } from './modelTools.js';
 import { validatePlan } from './routes/planner.js';
 import { openDb } from './db.js';
@@ -148,4 +148,10 @@ test('persisted model credential survives restart and invalid master key is not 
   const keyPath = join(dir, '.teamweave_model_key'); await writeFile(keyPath, 'broken');
   await assert.rejects(new ModelService(db, dbPath).getApiKey(c.id, 'org'), /Invalid model master key/);
   assert.equal(await readFile(keyPath, 'utf8'), 'broken');
+});
+
+
+test('upstream errors expose a safe business code, never a raw message', () => {
+  assert.equal(providerHttpError(429, JSON.stringify({ error: { code: '1113', message: secret } })), 'API responded with HTTP 429 (provider code 1113)');
+  assert.equal(providerHttpError(429, JSON.stringify({ error: { code: secret, message: secret } })), 'API responded with HTTP 429');
 });

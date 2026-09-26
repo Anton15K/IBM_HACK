@@ -87,6 +87,16 @@ export async function fetchBounded(
   return { ok: response.ok, status: response.status, body, requestId };
 }
 
+/** Preserve only a numeric provider code, never an upstream error message. */
+export function providerHttpError(status: number, body: string): string {
+  let code = '';
+  try {
+    const value = JSON.parse(body)?.error?.code;
+    if (/^\d{3,8}$/.test(String(value))) code = ` (provider code ${value})`;
+  } catch { /* non-JSON upstream errors stay generic */ }
+  return `API responded with HTTP ${status}${code}`;
+}
+
 // Parse model output → WorkerNode output
 
 function parseModelOutput(text: string): WorkerNode['output'] {
@@ -317,7 +327,7 @@ Commit: ${snapshot.commitSha}`;
             if (!respData.ok) {
               // Generic status-based error, never raw body
               throw Object.assign(
-                new Error(`API responded with HTTP ${respData.status}`),
+                new Error(providerHttpError(respData.status, respData.body)),
                 { code: 'API_HTTP_ERROR' },
               );
             }

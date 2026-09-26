@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { WorkerNode, ApiTokenUsage } from '../../src/types.js';
 import { readProject, mutateProject, requireTeamAccess } from '../db.js';
 import { resolveSession } from '../session.js';
-import { fetchBounded } from '../apiExecutor.js';
+import { fetchBounded, providerHttpError } from '../apiExecutor.js';
 import type { ModelService } from '../models.js';
 
 type PlanNode = { id: string; name: string; task: string; output: 'report' | 'patch'; dependsOn: string[] };
@@ -69,7 +69,7 @@ export async function plannerRoutes(app: FastifyInstance, opts: { modelService: 
     let response;
     try { response = await fetchBounded(conn.baseUrl.replace(/\/$/, '') + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.apiKey}` }, body: JSON.stringify(request), signal: AbortSignal.timeout(30_000) }, opts.fetchFn ?? fetch); }
     catch { return fail('Planning request failed or timed out', 502); }
-    if (!response.ok) return fail(`Planning provider returned HTTP ${response.status}`, 502);
+    if (!response.ok) return fail(providerHttpError(response.status, response.body), 502);
     let raw;
     try { raw = JSON.parse(response.body); } catch { return fail('Planning provider returned invalid JSON', 502); }
     const text = raw?.choices?.[0]?.message?.content;
