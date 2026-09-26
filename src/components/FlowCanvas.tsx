@@ -18,6 +18,7 @@ import {
 } from '@xyflow/react';
 import { useStore } from '../store';
 import { boardNodes, ancestors } from '../client-helpers';
+import { teamPositions } from '../canvas-layout';
 import { WorkerNodeCard } from './WorkerNodeCard';
 import { statusColor } from '../utils/colors';
 import StatusLegend from './StatusLegend';
@@ -368,6 +369,7 @@ function Canvas() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  const positions = teamPositions(children);
   const nodes: Node[] = board
     ? activeNodes.map((n) => ({
         id: n.id,
@@ -380,7 +382,7 @@ function Canvas() {
     : children.map((t) => ({
         id: t.id,
         type: 'organization',
-        position: { x: t.space.x, y: t.space.y },
+        position: positions.get(t.id)!,
         data: { ...t },
         draggable: (!!isAdmin || state.canEdit(t.id)) && !placement,
       }));
@@ -454,7 +456,10 @@ function Canvas() {
     state.teams,
     state.selectedNodeId,
     state.selectedGraphId,
+    state.navigationId,
+    state.auth,
     editable,
+    placement,
   ]);
 
   const handlePaneClick = useCallback(
