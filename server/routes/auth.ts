@@ -16,6 +16,9 @@ import {
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const COOKIE_NAME = 'tw_session';
+// Match the stored hash/salt sizes so unknown users pay the same scrypt cost.
+const LOGIN_DUMMY_HASH = '0'.repeat(128);
+const LOGIN_DUMMY_SALT = '0'.repeat(64);
 
 function buildUserResponse(db: DatabaseSync, userId: string, orgId: string) {
   const mem = getUserMembership(db, userId, orgId);
@@ -150,10 +153,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       | { id: string; email: string; name: string; passwordHash: string; salt: string }
       | undefined;
 
-    if (!user) return reply.status(401).send({ error: 'Invalid credentials' });
-
-    const ok = await verifyPassword(password, user.passwordHash, user.salt);
-    if (!ok) return reply.status(401).send({ error: 'Invalid credentials' });
+    const ok = await verifyPassword(
+      password,
+      user?.passwordHash ?? LOGIN_DUMMY_HASH,
+      user?.salt ?? LOGIN_DUMMY_SALT,
+    );
+    if (!user || !ok) return reply.status(401).send({ error: 'Invalid credentials' });
 
     const orgMem = db.prepare('SELECT orgId FROM org_memberships WHERE userId = ?').get(user.id) as
       | { orgId: string }

@@ -347,18 +347,38 @@ describe('bob provider: failure modes', { timeout: 20000 }, () => {
     const bobBin = join(suiteDir, `cancel-bob-${randomUUID().slice(0, 8)}.sh`);
     await makeFakeScript(bobBin, '#!/bin/sh\ncat>/dev/null\nsleep 60\n');
     const ac = new AbortController();
+    let prepared!: () => void;
+    const preparedBarrier = new Promise<void>(resolve => { prepared = resolve; });
     const promise = executeTask({
       node, graph: makeGraph(), incoming: [], assembledPrompt: 'p',
       signal: ac.signal, bobBin, allowedRoots: [repoDir], timeoutMs: 10000,
       injectedApiKey: 'fake-test-key-do-not-use',
+      onPrepared: () => prepared(),
     });
-    // Give the process a moment to start, then cancel
-    await new Promise((r) => setTimeout(r, 100));
+    // Cancel only after the snapshot is captured and execution has started.
+    await Promise.race([preparedBarrier, promise.then(() => assert.fail('execution ended before preparation'))]);
     ac.abort();
     const r = await promise;
     assert.equal(r.status, 'failed');
     assert.match(r.error, /cancelled/i);
     assert.ok(r.workspaceBefore !== null);
+  });
+
+  test('cancel before preparation does not spawn or invent a workspace snapshot', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    let prepared = false;
+    const marker = join(suiteDir, `unstarted-${randomUUID()}`);
+    const r = await runWith('#!/bin/sh\nprintf started > "$TEST_MARKER"\n', {
+      signal: ac.signal,
+      injectedEnv: { TEST_MARKER: marker },
+      onPrepared: () => { prepared = true; },
+    });
+    assert.equal(r.status, 'failed');
+    assert.match(r.error, /cancelled/i);
+    assert.equal(prepared, false);
+    assert.equal(r.workspaceBefore, null);
+    await assert.rejects(readFile(marker), { code: 'ENOENT' });
   });
 
   test('bob not configured (no key) => failed with config message', async () => {

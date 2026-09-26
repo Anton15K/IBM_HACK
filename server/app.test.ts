@@ -4,6 +4,7 @@ import { buildApp } from './app.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createHook } from 'node:async_hooks';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -141,6 +142,33 @@ describe('Login/Logout/Me', () => {
     assert.equal(res.statusCode, 401);
     assert.equal(res.json().error, 'Invalid credentials');
     await app.close();
+  });
+
+  test('unknown user and wrong password both derive a key and return the same failure', async () => {
+    const app = makeApp();
+    const email = 'timing@example.com';
+    await register(app, { email });
+    let derivations = 0;
+    const hook = createHook({ init(_id, type) { if (type === 'SCRYPTREQUEST') derivations++; } });
+    try {
+      for (const loginEmail of [email, 'missing@example.com']) {
+        derivations = 0;
+        hook.enable();
+        const res = await app.inject({
+          method: 'POST', url: '/api/auth/login',
+          headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
+          body: JSON.stringify({ email: loginEmail, password: 'incorrect-test-password' }),
+        });
+        hook.disable();
+        assert.equal(res.statusCode, 401);
+        assert.deepEqual(res.json(), { error: 'Invalid credentials' });
+        assert.equal(res.headers['set-cookie'], undefined);
+        assert.equal(derivations, 1, `one password derivation required for ${loginEmail}`);
+      }
+    } finally {
+      hook.disable();
+      await app.close();
+    }
   });
 
   test('GET /api/auth/me returns 401 without cookie', async () => {
