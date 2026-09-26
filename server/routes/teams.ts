@@ -16,6 +16,31 @@ function wouldCreateCycle(teams: Team[], teamId: string, newParentId: string): b
   return false;
 }
 
+/**
+ * Validate an optional partial space object supplied by the client.
+ * Returns { error } if invalid, or { space } with the validated partial dimensions.
+ * Only supplied keys are checked; absent keys are left to the caller to fill.
+ * w and h must be >= 0; x and y may be any finite number (negative/fractional ok).
+ */
+function validatePartialSpace(
+  raw: unknown,
+): { error: string } | { space: Partial<{ x: number; y: number; w: number; h: number }> } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
+    return { error: 'space must be a plain object' };
+  const s = raw as Record<string, unknown>;
+  const result: Partial<{ x: number; y: number; w: number; h: number }> = {};
+  for (const dim of ['x', 'y', 'w', 'h'] as const) {
+    if (!(dim in s)) continue;
+    const v = s[dim];
+    if (typeof v !== 'number' || !isFinite(v))
+      return { error: `space.${dim} must be a finite number` };
+    if ((dim === 'w' || dim === 'h') && v < 0)
+      return { error: `space.${dim} must be >= 0` };
+    result[dim] = v;
+  }
+  return { space: result };
+}
+
 export async function teamsRoutes(app: FastifyInstance): Promise<void> {
   const db: DatabaseSync = app.db;
 
@@ -54,13 +79,25 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
     if (!isAdmin(db, sess.userId, sess.orgId))
       return reply.status(403).send({ error: 'Admin access required' });
 
+    // Reject null or non-object body before dereference
+    if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))
+      return reply.status(400).send({ error: 'Request body must be a JSON object' });
+
     const body = req.body as Record<string, unknown>;
-    const { name, parentId, kind } = body ?? {};
+    const { name, parentId, kind } = body;
 
     if (typeof name !== 'string' || name.trim().length === 0)
       return reply.status(400).send({ error: 'name is required' });
     if (kind !== 'department' && kind !== 'team')
       return reply.status(400).send({ error: "kind must be 'department' or 'team'" });
+
+    // Validate optional space
+    let clientSpace: Partial<{ x: number; y: number; w: number; h: number }> | undefined;
+    if (body.space !== undefined) {
+      const result = validatePartialSpace(body.space);
+      if ('error' in result) return reply.status(400).send({ error: result.error });
+      clientSpace = result.space;
+    }
 
     const { project, revision } = mutateProject(db, sess.orgId, (p) => {
       // Validate parentId
@@ -71,12 +108,23 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const teamId = randomUUID();
+      const kindDefaults = {
+        x: 0,
+        y: 0,
+        w: kind === 'team' ? 1200 : 0,
+        h: kind === 'team' ? 480 : 0,
+      };
       const newTeam: Team = {
         id: teamId,
         name: name.trim(),
         parentId: typeof parentId === 'string' ? parentId : null,
         kind: kind as Team['kind'],
-        space: { x: 0, y: 0, w: kind === 'team' ? 1200 : 0, h: kind === 'team' ? 480 : 0 },
+        space: {
+          x: clientSpace?.x ?? kindDefaults.x,
+          y: clientSpace?.y ?? kindDefaults.y,
+          w: clientSpace?.w ?? kindDefaults.w,
+          h: clientSpace?.h ?? kindDefaults.h,
+        },
       };
 
       const newGraphs: GraphContext[] = [];
@@ -110,6 +158,11 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
     if (!sess) return;
 
     const { id } = req.params as { id: string };
+
+    // Reject null or non-object body before dereference
+    if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))
+      return reply.status(400).send({ error: 'Request body must be a JSON object' });
+
     const body = req.body as Record<string, unknown>;
 
     const admin = isAdmin(db, sess.userId, sess.orgId);
@@ -117,6 +170,14 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
 
     if (!admin && !editor)
       return reply.status(403).send({ error: 'Insufficient permissions' });
+
+    // Validate optional space before mutation
+    let spacePatch: Partial<{ x: number; y: number; w: number; h: number }> | undefined;
+    if (body.space !== undefined) {
+      const result = validatePartialSpace(body.space);
+      if ('error' in result) return reply.status(400).send({ error: result.error });
+      spacePatch = result.space;
+    }
 
     const { project, revision } = mutateProject(db, sess.orgId, (p) => {
       const idx = p.teams.findIndex((t) => t.id === id);
@@ -143,13 +204,12 @@ export async function teamsRoutes(app: FastifyInstance): Promise<void> {
       // Both admin and editor can change these
       if (typeof body.currentTaskLabel === 'string')
         updated.currentTaskLabel = body.currentTaskLabel;
-      if (body.space && typeof body.space === 'object') {
-        const s = body.space as Record<string, unknown>;
+      if (spacePatch !== undefined) {
         updated.space = {
-          x: typeof s.x === 'number' ? s.x : updated.space.x,
-          y: typeof s.y === 'number' ? s.y : updated.space.y,
-          w: typeof s.w === 'number' ? s.w : updated.space.w,
-          h: typeof s.h === 'number' ? s.h : updated.space.h,
+          x: spacePatch.x ?? updated.space.x,
+          y: spacePatch.y ?? updated.space.y,
+          w: spacePatch.w ?? updated.space.w,
+          h: spacePatch.h ?? updated.space.h,
         };
       }
 
