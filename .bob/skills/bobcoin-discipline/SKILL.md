@@ -21,7 +21,7 @@ No deliverable = no task.
 
 ### 3. Set `--max-cost` cap
 Every `bob run` call must include `--max-cost <amount>`.
-Default for this repo: **$0.50**. Document the cap in the task description.
+Default for this repo: **0.50 Bobcoins**. Document the cap in the task description.
 If the task might cost more, get explicit approval and state the revised cap.
 
 ### 4. Batch, don't fragment

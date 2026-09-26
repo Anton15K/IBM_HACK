@@ -7,3 +7,6 @@ dist-server/
 *.db
 *.db-shm
 *.db-wal
+.env
+*.key
+*.secret
