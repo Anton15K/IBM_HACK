@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { buildApp } from './app.js';
 import { ModelService, validateBaseUrl } from './models.js';
-import { executeApiTask, fetchBounded, providerHttpError } from './apiExecutor.js';
+import { executeApiTask, fetchBounded, fetchBoundedWithRetry, providerHttpError, API_MAX_RETRIES } from './apiExecutor.js';
 import { dispatchTool, toolReadFile, toolWriteFile, toolListFiles, toolRunTests } from './modelTools.js';
 import { validatePlan } from './routes/planner.js';
 import { openDb } from './db.js';
@@ -37,6 +37,8 @@ function node(connectionId: string): WorkerNode {
 test('model profiles protect secrets and tenant boundaries; URL supports API paths', async t => {
   assert.equal(validateBaseUrl(profile.baseUrl), null);
   for (const url of ['http://api.z.ai/v1', 'https://localhost/v1', 'https://api.z.ai:8443/v1', 'https://user:pw@api.z.ai/v1', 'https://api.z.ai/v1?key=secret']) assert.ok(validateBaseUrl(url));
+  assert.equal(validateBaseUrl('https://openrouter.ai/api/v1'), null);
+  assert.ok(validateBaseUrl('https://evil-openrouter.ai/api/v1'));
   const app = buildApp({ dbPath: ':memory:' }); t.after(() => app.close());
   const a = await register(app, 'a@example.test'), b = await register(app, 'b@example.test');
   const created = await app.inject({ method: 'POST', url: '/api/model-connections', headers: { cookie: a.cookie }, payload: profile });
@@ -154,4 +156,28 @@ test('persisted model credential survives restart and invalid master key is not 
 test('upstream errors expose a safe business code, never a raw message', () => {
   assert.equal(providerHttpError(429, JSON.stringify({ error: { code: '1113', message: secret } })), 'API responded with HTTP 429 (provider code 1113)');
   assert.equal(providerHttpError(429, JSON.stringify({ error: { code: secret, message: secret } })), 'API responded with HTTP 429');
+});
+
+test('fetchBoundedWithRetry survives transient 429/5xx and gives up after bounded attempts', async () => {
+  const ok = response('ok');
+  // 429 then success → succeeds on second attempt
+  let calls = 0;
+  let r = await fetchBoundedWithRetry('https://api.z.ai/x', {}, async () => { calls++; return calls === 1 ? new Response('rate limited', { status: 429 }) : ok; }, new AbortController().signal);
+  assert.equal(r.status, 200); assert.equal(calls, 2);
+  // Persistent 429 → returns last response after max retries, does not throw
+  calls = 0;
+  r = await fetchBoundedWithRetry('https://api.z.ai/x', {}, async () => { calls++; return new Response('rate limited', { status: 429 }); }, new AbortController().signal);
+  assert.equal(r.status, 429); assert.equal(calls, API_MAX_RETRIES + 1);
+  // Non-retryable status → single call, no retry
+  calls = 0;
+  r = await fetchBoundedWithRetry('https://api.z.ai/x', {}, async () => { calls++; return new Response('nope', { status: 404 }); }, new AbortController().signal);
+  assert.equal(r.status, 404); assert.equal(calls, 1);
+});
+
+test('fetchBoundedWithRetry honors abort during backoff', async () => {
+  const ctrl = new AbortController();
+  const attempt = fetchBoundedWithRetry('https://api.z.ai/x', {}, async () => new Response('rate limited', { status: 429 }), ctrl.signal);
+  await new Promise(r => setTimeout(r, 20));
+  ctrl.abort();
+  await assert.rejects(attempt, /Canceled/);
 });

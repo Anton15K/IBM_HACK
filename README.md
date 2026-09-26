@@ -28,9 +28,9 @@ The backend listens on `127.0.0.1:7142`; SQLite stores users, roles, projects an
 | Bob Shell | `BOB_API_KEY` or `~/.bob/api_key`; optional `BOB_BIN` | Runs Bob in the bound Git workspace with per-task coin and turn caps |
 | API model | An organization administrator adds a connection in **Backend** | OpenAI-compatible chat completions with bounded file tools and token limits |
 
-API connections accept a label, base URL, model name and write-only API key. For z.ai use `https://api.z.ai/api/paas/v4` and an available model such as `glm-4.7-flash`. For an OpenAI-compatible endpoint, include its API path, for example `https://api.openai.com/v1`. Compatibility varies by model; native Anthropic and Google endpoints are not implemented in this runtime.
+API connections accept a label, base URL, model name and write-only API key. For OpenRouter use `https://openrouter.ai/api/v1` and a namespaced model slug such as `z-ai/glm-5.3-flash`. For z.ai use `https://api.z.ai/api/paas/v4` and an available model such as `glm-4.7-flash`. For an OpenAI-compatible endpoint, include its API path, for example `https://api.openai.com/v1`. Compatibility varies by model; native Anthropic and Google endpoints are not implemented in this runtime.
 
-Credentials are encrypted on the server. Back up the private `.teamweave_model_key` file alongside the database; losing it makes saved credentials unreadable. Do not commit either file. Outbound model hosts must appear in `TEAMWEAVE_MODEL_HOSTS` (comma-separated; defaults: `api.z.ai,api.openai.com`); HTTPS is required and redirects are rejected.
+Credentials are encrypted on the server. Back up the private `.teamweave_model_key` file alongside the database; losing it makes saved credentials unreadable. Do not commit either file. Outbound model hosts must appear in `TEAMWEAVE_MODEL_HOSTS` (comma-separated; defaults: `api.z.ai,api.openai.com,openrouter.ai`); HTTPS is required and redirects are rejected.
 
 - **AI plan** generates a small proposed graph. Review it and click **Apply plan** to create draft nodes. Applying does not execute tasks; a stale proposal must be regenerated.
 - Each worker chooses a provider and, for API models, a connection. **Run pending tasks** respects dependencies and review gates; a node can also be run individually.

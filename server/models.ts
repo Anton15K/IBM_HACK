@@ -31,7 +31,7 @@ const ALGO = 'aes-256-gcm';
 const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 
-const DEFAULT_ALLOWED_HOSTS = 'api.z.ai,api.openai.com';
+const DEFAULT_ALLOWED_HOSTS = 'api.z.ai,api.openai.com,openrouter.ai';
 
 // Master key management
 

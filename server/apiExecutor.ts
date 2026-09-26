@@ -87,7 +87,7 @@ export async function fetchBounded(
   return { ok: response.ok, status: response.status, body, requestId };
 }
 
-/** Preserve only a numeric provider code, never an upstream error message. */
+/** Preserve only a numeric provider code, never an upstream message. */
 export function providerHttpError(status: number, body: string): string {
   let code = '';
   try {
@@ -95,6 +95,44 @@ export function providerHttpError(status: number, body: string): string {
     if (/^\d{3,8}$/.test(String(value))) code = ` (provider code ${value})`;
   } catch { /* non-JSON upstream errors stay generic */ }
   return `API responded with HTTP ${status}${code}`;
+}
+
+// Bounded retry for transient upstream failures (rate limits / spurious 5xx).
+// The executor previously failed the whole worker attempt on the first 429,
+// which made long agentic loops unusable on shared rate-limited keys.
+
+export const API_MAX_RETRIES = 3;
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_BASE_DELAY_MS = 1_500;
+const RETRY_MAX_DELAY_MS = 15_000;
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    function onAbort() { clearTimeout(t); reject(Object.assign(new Error('Canceled'), { code: 'CANCELED' })); }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * fetchBounded with bounded retries on transient upstream failures (429/5xx),
+ * exponential backoff, and abort-aware sleeps. Non-retryable statuses and the
+ * final attempt return the last response as-is.
+ */
+export async function fetchBoundedWithRetry(
+  url: string,
+  options: RequestInit,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+): Promise<{ ok: boolean; status: number; body: string; requestId: string | null }> {
+  let last: { ok: boolean; status: number; body: string; requestId: string | null };
+  for (let attempt = 0; ; attempt++) {
+    if (signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
+    last = await fetchBounded(url, options, fetchFn);
+    if (last.ok || !RETRY_STATUS.has(last.status) || attempt >= API_MAX_RETRIES) return last;
+    const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, RETRY_MAX_DELAY_MS);
+    await sleep(delay, signal);
+  }
 }
 
 // Parse model output → WorkerNode output
@@ -212,8 +250,10 @@ export async function executeApiTask(
 
   const reportOnly = node.desiredOutput !== 'patch';
 
-  // Determine if this is a z.ai glm model (needs thinking disabled)
-  const isGlm = new URL(baseUrl).hostname === 'api.z.ai' && model === 'glm-4.7-flash';
+  // Determine if this is a z.ai GLM direct endpoint (thinking must be disabled
+  // when max_tokens is set). Match by host only: model slugs on OpenRouter are
+  // namespaced (z-ai/glm-…) and never collide with z.ai's bare slugs.
+  const isGlm = new URL(baseUrl).hostname === 'api.z.ai';
 
   const chatUrl = baseUrl.replace(/\/$/, '') + '/chat/completions';
 
@@ -301,7 +341,7 @@ Commit: ${snapshot.commitSha}`;
 
             let respData: { ok: boolean; status: number; body: string; requestId: string | null };
             try {
-              respData = await fetchBounded(
+              respData = await fetchBoundedWithRetry(
                 chatUrl,
                 {
                   method: 'POST',
@@ -313,6 +353,7 @@ Commit: ${snapshot.commitSha}`;
                   signal: overallAbort.signal,
                 },
                 fetchFn,
+                overallAbort.signal,
               );
             } catch (e: unknown) {
               if (signal.aborted || overallAbort.signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
