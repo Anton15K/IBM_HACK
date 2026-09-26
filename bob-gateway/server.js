@@ -51,6 +51,22 @@ function bobEnv() {
 }
 
 /**
+ * Strip markdown emphasis characters from a string.
+ * Removes: **bold**, *italic*, __bold__, _italic_, `code`, leading # headers.
+ */
+function stripMarkdown(text) {
+  return text
+    .replace(/^#+\s*/gm, '')          // # headings
+    .replace(/\*\*([^*]*)\*\*/g, '$1') // **bold**
+    .replace(/__([^_]*)__/g, '$1')     // __bold__
+    .replace(/\*([^*]+)\*/g, '$1')     // *italic*
+    .replace(/_([^_]+)_/g, '$1')       // _italic_
+    .replace(/`([^`]*)`/g, '$1')       // `code`
+    .replace(/\s+/g, ' ')              // collapse whitespace
+    .trim();
+}
+
+/**
  * Parse bob's JSON result line into RunOutput.
  * Expected format: { type:"result", status:"success", stats:{...}, last_message:"..." }
  */
@@ -59,19 +75,30 @@ function parseBobResult(raw) {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Not JSON — treat the whole string as the summary
-    return {
-      summary: raw.slice(0, 400),
-      results: [],
-      commands: [],
-      artifacts: [],
-    };
+    // Not JSON — treat the whole string as the message
+    parsed = { last_message: raw, status: 'unknown' };
   }
 
   const lastMsg = String(parsed.last_message ?? parsed.message ?? '');
-  const summary = lastMsg.slice(0, 400);
 
-  // Extract bullet lines (lines starting with - or * or numbered list)
+  // ── summary ────────────────────────────────────────────────────────────────
+  // Find the first substantive paragraph (non-empty after stripping markdown).
+  const paragraphs = lastMsg.split(/\n{2,}/);
+  let summaryRaw = '';
+  for (const para of paragraphs) {
+    const stripped = stripMarkdown(para);
+    if (stripped.length > 0) {
+      summaryRaw = stripped;
+      break;
+    }
+  }
+  // If every "paragraph" was inline (no blank lines), fall back to first line.
+  if (!summaryRaw) {
+    summaryRaw = stripMarkdown(lastMsg.split('\n')[0] || '');
+  }
+  const summary = (summaryRaw || (parsed.status === 'success' ? 'Bob completed the task.' : 'Bob finished.')).slice(0, 400);
+
+  // ── results ────────────────────────────────────────────────────────────────
   const bulletRe = /^[\s]*[-*•]\s+(.+)$/;
   const numberedRe = /^[\s]*\d+[.)]\s+(.+)$/;
   const results = lastMsg
@@ -79,30 +106,68 @@ function parseBobResult(raw) {
     .filter((l) => bulletRe.test(l) || numberedRe.test(l))
     .map((l) => {
       const m = l.match(bulletRe) || l.match(numberedRe);
-      return m ? m[1].trim() : l.trim();
+      return m ? stripMarkdown(m[1]) : stripMarkdown(l);
     })
     .filter(Boolean)
     .slice(0, 20);
 
-  // Extract code-fence commands (```bash blocks)
-  const commands = [];
-  const codeRe = /```(?:bash|sh|shell)?\n([\s\S]*?)```/g;
-  let m;
-  while ((m = codeRe.exec(lastMsg)) !== null) {
-    commands.push(...m[1].split('\n').map((l) => l.trim()).filter(Boolean));
+  // Fallback: first sentence of summary if short enough, else []
+  let resultsFallback = [];
+  if (!results.length) {
+    const firstSentence = summary.split(/(?<=[.!?])\s/)[0] || summary;
+    if (firstSentence.length < 120) {
+      resultsFallback = [firstSentence];
+    }
   }
 
-  // Extract file references (lines mentioning a file path)
-  const fileRe = /(?:^|\s)([\w./\\-]+\.(?:md|txt|json|ts|js|py|java|yaml|yml))/gm;
+  // ── commands ───────────────────────────────────────────────────────────────
+  const commands = [];
+
+  // 1) Fenced code blocks (```bash / ```sh / unlabelled)
+  const codeRe = /```(?:bash|sh|shell|zsh)?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = codeRe.exec(lastMsg)) !== null) {
+    m[1].split('\n').map((l) => l.trim()).filter(Boolean).forEach((l) => commands.push(l));
+  }
+
+  // 2) Inline backtick snippets that follow a command-intent word (colon optional)
+  const inlineCmdRe = /(?:run|execute|use|ran|try):?\s+`([^`]+)`/gi;
+  while ((m = inlineCmdRe.exec(lastMsg)) !== null) {
+    const candidate = m[1].trim();
+    if (candidate && !commands.includes(candidate)) commands.push(candidate);
+  }
+
+  // 3) Lines starting with $, or known CLI prefixes
+  const cliPrefixRe = /^(?:\$\s*|(?:npm|node|git|python3?|cd|yarn|pnpm|npx)\s)\S/;
+  lastMsg.split('\n').forEach((l) => {
+    const trimmed = l.trim();
+    if (cliPrefixRe.test(trimmed)) {
+      const cmd = trimmed.replace(/^\$\s*/, '');
+      if (!commands.includes(cmd)) commands.push(cmd);
+    }
+  });
+
+  // ── artifacts ──────────────────────────────────────────────────────────────
   const artifacts = [];
-  while ((m = fileRe.exec(lastMsg)) !== null) {
+  const EXT = 'md|txt|json|ts|tsx|js|jsx|mjs|cjs|py|java|yaml|yml|toml|sh|css|html|xml|csv|env';
+
+  // 1) Filenames inside backticks
+  const btFileRe = new RegExp('`([^`\\s]+\\.(?:' + EXT + '))`', 'gi');
+  while ((m = btFileRe.exec(lastMsg)) !== null) {
+    const f = m[1].trim();
+    if (!artifacts.includes(f)) artifacts.push(f);
+  }
+
+  // 2) Filenames after "file/created/wrote/modified" keywords or bare in text
+  const kwFileRe = new RegExp('(?:file|created|wrote|modified|saved|updated)\\s+([\\w./\\\\-]+\\.(?:' + EXT + '))', 'gi');
+  while ((m = kwFileRe.exec(lastMsg)) !== null) {
     const f = m[1].trim();
     if (!artifacts.includes(f)) artifacts.push(f);
   }
 
   return {
-    summary: summary || (parsed.status === 'success' ? 'Bob completed the task.' : 'Bob finished.'),
-    results: results.length ? results : (parsed.status === 'success' ? ['Task completed successfully'] : []),
+    summary,
+    results: results.length ? results : resultsFallback,
     commands: commands.slice(0, 10),
     artifacts: artifacts.slice(0, 10),
   };
