@@ -23,21 +23,6 @@ export default function TopBar() {
         <>
           <button className="small-button" disabled={!state.selectedGraphId} onClick={() => setPlanningGraph(state.selectedGraphId)}>AI plan</button>
           <button
-            disabled={
-              !state.selectedGraphId || state.busy.includes('createNode')
-            }
-            className="action-button"
-            onClick={() => void state.createNode()}
-          >
-            + New Task
-          </button>
-          <button
-            className="small-button"
-            onClick={() => void state.createNode('gate')}
-          >
-            + Gate
-          </button>
-          <button
             className="small-button"
             onClick={state.toggleTemplatesDrawer}
           >

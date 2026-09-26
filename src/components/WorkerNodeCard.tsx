@@ -143,10 +143,15 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
           </div>
         </div>
 
-        {/* Name */}
-        <div className="text-ink text-[13px] font-semibold leading-snug line-clamp-2 mb-1">
+        {/* Name — acts as inspect button; nodrag/nopan so click never starts a drag */}
+        <button
+          type="button"
+          className="nodrag nopan text-ink text-[13px] font-semibold leading-snug line-clamp-2 mb-1 text-left w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent rounded"
+          aria-label={`Inspect ${node.name}`}
+          onClick={(e) => { e.stopPropagation(); selectNode(node.id); }}
+        >
           {node.name}
-        </div>
+        </button>
 
         {/* Source team badge for cross-team inbox */}
         {sourceTeamName && (
