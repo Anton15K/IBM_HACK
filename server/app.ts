@@ -70,8 +70,18 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
   // Register cookie plugin
   app.register(cookie);
 
-  // Origin check hook — reject untrusted Origin header on state-changing requests
+  // Local backend: validate the actual Host on every request, including reads.
+  // Forwarded headers are untrusted; Vite keeps a loopback Host with its own port.
   app.addHook('onRequest', async (req, reply) => {
+    const host = req.headers.host;
+    const localHost = typeof host === 'string'
+      ? /^(localhost|127\.0\.0\.1|\[::1\])(?::([0-9]{1,5}))?$/i.exec(host)
+      : null;
+    if (!localHost || (localHost[2] !== undefined &&
+        (Number(localHost[2]) < 1 || Number(localHost[2]) > 65535))) {
+      return reply.status(403).send({ error: 'Forbidden: untrusted host' });
+    }
+
     const origin = req.headers.origin;
     const method = req.method?.toUpperCase();
     const isStateful = method === 'POST' || method === 'PUT' ||
@@ -86,8 +96,11 @@ export function buildApp(options: BuildAppOptions = {}): ReturnType<typeof Fasti
 
   // Error handler — translate statusCode attached to errors
   app.setErrorHandler(async (err: Error & { statusCode?: number }, _req, reply) => {
-    const statusCode = err.statusCode ?? 500;
-    const message = err.message ?? 'Internal server error';
+    const statusCode = Number.isInteger(err.statusCode) && err.statusCode! >= 400 && err.statusCode! <= 599
+      ? err.statusCode! : 500;
+    // Do not expose or log arbitrary exception text: it can contain paths or credentials.
+    if (statusCode >= 500) _req.log.error({ statusCode }, 'Request failed');
+    const message = statusCode >= 500 ? 'Internal server error' : err.message;
     return reply.status(statusCode).send({ error: message });
   });
 
