@@ -19,6 +19,7 @@ import {
 import { useStore } from '../store';
 import { boardNodes, ancestors } from '../client-helpers';
 import { teamPositions } from '../canvas-layout';
+import { PlacementGesture } from '../canvas-gesture';
 import { WorkerNodeCard } from './WorkerNodeCard';
 import { statusColor } from '../utils/colors';
 import StatusLegend from './StatusLegend';
@@ -327,6 +328,7 @@ function Canvas() {
   const state = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const dragging = useRef(new Set<string>());
+  const placementGesture = useRef(new PlacementGesture());
 
   const [placement, setPlacement] = useState<PlacementMode>(null);
   const [edgeEditor, setEdgeEditor] = useState<{
@@ -356,6 +358,10 @@ function Canvas() {
     setPlacement(null);
     setEdgeEditor(null);
   }, [state.selectedGraphId, state.navigationId]);
+
+  useEffect(() => {
+    placementGesture.current.cancel();
+  }, [placement, state.navigationId, state.selectedGraphId]);
 
   // Escape key cancels placement
   useEffect(() => {
@@ -469,6 +475,7 @@ function Canvas() {
         setEdgeEditor(null);
         return;
       }
+      if (!placementGesture.current.consume(event.clientX, event.clientY)) return;
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
       if (placement.kind === 'worker' || placement.kind === 'gate') {
@@ -523,6 +530,16 @@ function Canvas() {
     <>
       <div
         style={{ width: '100%', height: '100%', cursor: cursorStyle }}
+        onPointerDownCapture={(e) => {
+          if (!placement) return;
+          if (e.button !== 0 || !e.isPrimary) { placementGesture.current.cancel(); return; }
+          placementGesture.current.start(e.pointerId, e.clientX, e.clientY,
+            e.target instanceof Element && e.target.classList.contains('react-flow__pane'));
+        }}
+        onPointerMoveCapture={(e) => placementGesture.current.move(e.pointerId, e.clientX, e.clientY)}
+        onPointerUpCapture={(e) => placementGesture.current.end(e.pointerId, e.clientX, e.clientY,
+          e.target instanceof Element && e.target.classList.contains('react-flow__pane'))}
+        onPointerCancelCapture={() => placementGesture.current.cancel()}
         onClick={(e) => { if (edgeEditor) { e.stopPropagation(); setEdgeEditor(null); } }}
       >
         <ReactFlow
