@@ -25,12 +25,20 @@ function OrganizationCard({ data }: NodeProps) {
       <div className="text-accent text-[10px] uppercase tracking-widest mb-2">
         {String(data.kind ?? 'team')}
       </div>
-      <div className="text-ink font-semibold">{String(data.name)}</div>
-      <p className="text-muted text-[11px] mt-2">
+      <h2 className="text-ink font-semibold">{String(data.name)}</h2>
+      <button
+        type="button"
+        className="nodrag nopan text-muted text-[11px] mt-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        aria-label={`Open ${String(data.name)}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          useStore.getState().navigate(String(data.id));
+        }}
+      >
         {data.kind !== 'team'
           ? 'Open departments & teams →'
           : 'Open task board →'}
-      </p>
+      </button>
       <Handle type="source" position={Position.Right} />
     </div>
   );

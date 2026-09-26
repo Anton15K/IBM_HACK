@@ -8,8 +8,10 @@ import SettingsModal from './components/SettingsModal';
 import AdminModal from './components/AdminModal';
 import AuthScreen from './components/AuthScreen';
 import { useStore } from './store';
+import { connectHashNavigation } from './hash-navigation';
 export default function App() {
   const state = useStore();
+  useEffect(() => connectHashNavigation(window), []);
   useEffect(() => {
     void useStore.getState().bootstrap();
   }, []);
@@ -50,7 +52,12 @@ export default function App() {
       )}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 relative overflow-hidden">
+        <main className="flex-1 relative overflow-hidden" aria-labelledby="current-view-heading">
+          <h1 id="current-view-heading" className="sr-only">
+            {state.selectedTeamId
+              ? `${state.teams.find(t => t.id === state.selectedTeamId)?.name ?? 'Team'} — ${state.graphContexts.find(g => g.id === state.selectedGraphId)?.name ?? 'Task board'}`
+              : state.teams.find(t => t.id === state.navigationId)?.name ?? 'Company overview'}
+          </h1>
           <FlowCanvas key={state.navigationId ?? 'company'} />
         </main>
         {state.selectedNodeId && <Inspector key={state.selectedNodeId} />}
