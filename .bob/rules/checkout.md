@@ -26,4 +26,6 @@ Keep the subject line ≤72 characters.
 - PR body must list files changed, the verification bar output, and any
   cost/token usage if a Bob run was involved.
 - A human reviewer must approve before merging — no self-merge.
-- Squash-merge or rebase; do not create merge commits on `main`.
+- Merge via PR. Default to a merge commit (preserves the reviewed branch
+  history); squash or rebase-merge is acceptable when the branch is a single
+  logical change. Never push directly to `main`.
