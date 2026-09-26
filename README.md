@@ -65,8 +65,23 @@ Click the ⚙ icon in the top bar → Settings. Paste keys into the masked field
 Keys are stored in `localStorage` under the key `teamweave-keys` and are **never included in exported project JSON**.  
 Use the **Test** button next to each provider to verify connectivity.
 
-**Bob Gateway note:**  
-The `bob` executor POSTs to `http://localhost:7142/execute` (configurable in Settings). The gateway binary lives in `bob-gateway/` and will be released in the next milestone. If it's not running, nodes fail with a clear "Bob Gateway not running" error message.
+**Bob Gateway note:**
+The `bob` executor POSTs to `http://localhost:7142/execute` (configurable in Settings). If the gateway is not running, nodes fall back to the built-in simulator with a `[Simulated]` prefix in the summary.
+
+### Bob Gateway (optional, for live Bob runs)
+
+The gateway lets Bob-provider nodes execute tasks through the real IBM Bob Shell CLI
+instead of the simulator.
+
+```bash
+# 1. Install IBM Bob Shell and add your API key to ~/.bob/api_key
+# 2. Start the gateway (no npm install needed — zero dependencies):
+node bob-gateway/server.js          # or: npm run gateway
+# 3. In TeamWeave Settings, confirm Bob Gateway URL = http://localhost:7142
+```
+
+See [`bob-gateway/README.md`](bob-gateway/README.md) for full setup, security notes,
+and troubleshooting.
 
 ### Cross-Team Send ("Send to Team")
 
@@ -132,8 +147,9 @@ The app loads with **Acme Corp** pre-populated:
 
 - [x] **M1**: Canvas, spaces, nodes, mock runner, templates, persistence
 - [x] **M2**: Real LLM executors (OpenAI/Anthropic/Google/Bob), cross-team send, session replay, settings with BYO keys
-- [ ] **M3**: Collaboration (multi-user, presence, comments)
-- [ ] **M4**: Persistent backend, auth, org management
+- [x] **M3**: Bob Gateway — local bridge between TeamWeave UI and `bob run` CLI (`bob-gateway/server.js`)
+- [ ] **M4**: Collaboration (multi-user, presence, comments)
+- [ ] **M5**: Persistent backend, auth, org management
 
 ## License
 
