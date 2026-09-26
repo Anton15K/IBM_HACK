@@ -194,6 +194,82 @@ describe('createTeam', () => {
     assert.notEqual(useStore.getState().selectedTeamId, 'new-team');
   });
 
+  test('createTeam drains an older poll and loads its team and default graph before returning', async () => {
+    const p = makeProject();
+    const oldPoll = deferred<Response>();
+    const postStarted = deferred<void>();
+    const createdTeam: Team = {
+      ...teams[0], id: 'new-team', name: 'New Team',
+    };
+    const createdGraph = { ...graph, id: 'new-graph', teamId: createdTeam.id };
+    let projectReads = 0;
+    globalThis.fetch = async (url, init) => {
+      if (String(url) === '/api/project') {
+        projectReads++;
+        if (projectReads === 1) return oldPoll.promise;
+        return json({
+          ...p,
+          teams: [...p.teams, createdTeam],
+          graphContexts: [...p.graphContexts, createdGraph],
+          revision: 2,
+        });
+      }
+      if (String(url) === '/api/teams' && init?.method === 'POST') {
+        postStarted.resolve();
+        return json({ ...createdTeam, revision: 2 }, 201);
+      }
+      return json(null);
+    };
+    ready(p);
+    useStore.getState().navigate(null);
+    const polling = useStore.getState().refresh();
+    const creating = useStore.getState().createTeam('New Team', 'team');
+    await postStarted.promise;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(projectReads, 1, 'the older poll is drained without overlapping another GET');
+    oldPoll.resolve(json(p));
+    await polling;
+    const result = await creating;
+    assert.equal(result?.id, createdTeam.id);
+    assert.equal(projectReads, 2, 'exactly one fresh project GET follows the older poll');
+    assert.ok(useStore.getState().teams.some((team) => team.id === createdTeam.id));
+    useStore.getState().navigate(createdTeam.id);
+    assert.equal(useStore.getState().selectedTeamId, createdTeam.id);
+    assert.equal(useStore.getState().selectedGraphId, createdGraph.id);
+  });
+
+  test('logout while createTeam drains an older poll prevents a follow-up read in a new session', async () => {
+    const p = makeProject();
+    const oldPoll = deferred<Response>();
+    const postStarted = deferred<void>();
+    let projectReads = 0;
+    globalThis.fetch = async (url, init) => {
+      if (String(url) === '/api/project') {
+        projectReads++;
+        return oldPoll.promise;
+      }
+      if (String(url) === '/api/teams' && init?.method === 'POST') {
+        postStarted.resolve();
+        return json({ ...teams[0], id: 'new-team', revision: 2 }, 201);
+      }
+      return json(null);
+    };
+    ready(p);
+    useStore.getState().navigate(null);
+    const polling = useStore.getState().refresh();
+    const creating = useStore.getState().createTeam('New Team', 'team');
+    await postStarted.promise;
+    await new Promise((resolve) => setImmediate(resolve));
+    await useStore.getState().logout();
+    useStore.setState({ ...p, auth, loading: false, error: null });
+    oldPoll.resolve(json(p));
+    await polling;
+    assert.equal(await creating, null);
+    assert.equal(projectReads, 1);
+    assert.equal(useStore.getState().teams.some((team) => team.id === 'new-team'), false);
+    assert.equal(useStore.getState().error, null);
+  });
+
   test('non-admin createTeam returns null without posting', async () => {
     const p = makeProject();
     let postCalled = false;
