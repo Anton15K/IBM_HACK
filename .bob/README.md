@@ -40,10 +40,23 @@ skill: .bob/skills/bobcoin-discipline/SKILL.md
 
 | Name | Command | Purpose |
 |---|---|---|
-| `filesystem` | `npx -y @modelcontextprotocol/server-filesystem .` | Repo-scoped file read/write tools |
-| `memory` | `npx -y @modelcontextprotocol/server-memory` | Cross-session knowledge graph |
+| `filesystem` | `npx -y @modelcontextprotocol/server-filesystem@2026.8.31 .` | Repo-scoped file read/write tools |
+| `memory` | `npx -y @modelcontextprotocol/server-memory@2026.8.31` | Cross-session knowledge graph |
 
 Verify they are registered: `bob mcp list`
 
 No API keys. No secrets. No machine-specific paths. Both servers require only
 Node.js (already needed to run the project).
+
+
+## Submission evidence
+
+`bob_sessions/` is required future evidence; the workspace configuration does
+not establish that screenshots have already been collected. Capture genuine
+IBM Bob IDE task summaries using the session-evidence skill. Until verified
+images are present, evidence remains PENDING. Shell logs and configuration files
+do not replace those screenshots or prove a Bob Factor value.
+
+MCP versions above match the locally installed packages checked for this change.
+They provide developer tools; their filesystem permissions are separate from
+TeamWeave runtime tool restrictions. Do not expose credentials through them.
