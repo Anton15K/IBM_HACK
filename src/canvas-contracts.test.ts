@@ -1,7 +1,7 @@
 import { afterEach, test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { useStore, flushEdits, sessionRequest } from './store';
-import { mergePatch, type Auth } from './client-helpers';
+import { useStore, flushEdits } from './store';
+import { type Auth } from './client-helpers';
 import type { WorkerNode, Project, Team } from './types';
 
 // ---------------------------------------------------------------------------
@@ -232,13 +232,18 @@ describe('createTeam', () => {
   test('createTeam returns null and does not set selected team after session change', async () => {
     const p = makeProject();
     const postDeferred = deferred<Response>();
+    const postStarted = deferred<void>();
     globalThis.fetch = async (url, init) => {
-      if (String(url) === '/api/teams' && init?.method === 'POST') return postDeferred.promise;
+      if (String(url) === '/api/teams' && init?.method === 'POST') {
+        postStarted.resolve();
+        return postDeferred.promise;
+      }
       if (String(url) === '/api/project') return json(p);
       return json(null);
     };
     ready(p);
     const creating = useStore.getState().createTeam('Race', 'team');
+    await postStarted.promise;
     // Log out (session change) while POST is in flight
     globalThis.fetch = async () => new Response(null, { status: 204 });
     await useStore.getState().logout();
@@ -291,24 +296,37 @@ describe('updateTeam', () => {
     assert.equal(useStore.getState().teams.find((t) => t.id === 'team1')!.name, 'Engineering');
   });
 
-  test('dirty overlay: pending space edit survives an older stale poll', async () => {
+  test('pending and in-flight space edits survive polling and older save responses', async () => {
     const p = makeProject();
-    const oldPoll = deferred<Response>();
+    const firstSave = deferred<Response>();
+    const patchStarted = deferred<void>();
+    const patches: Record<string, unknown>[] = [];
     globalThis.fetch = async (url, init) => {
-      if (String(url) === '/api/project') return oldPoll.promise;
-      if (init?.method === 'PATCH')
+      if (String(url) === '/api/project') return json(p);
+      if (init?.method === 'PATCH') {
+        patches.push(JSON.parse(String(init.body)));
+        if (patches.length === 1) {
+          patchStarted.resolve();
+          return firstSave.promise;
+        }
         return json({ ...teams[0], space: { x: 55.5, y: -10, w: 1200, h: 480 }, revision: 3 });
+      }
       return json(null);
     };
     ready(p);
-    useStore.getState().updateTeam('team1', { space: { x: 55.5, y: -10 } });
+    useStore.getState().updateTeam('team1', { space: { x: 55.5 } });
+    await useStore.getState().refresh();
+    assert.equal(useStore.getState().teams[0].space.x, 55.5);
     const flush = flushEdits();
-    // Stale poll arrives with old data
-    oldPoll.resolve(json(p));
+    await patchStarted.promise;
+    useStore.getState().updateTeam('team1', { space: { y: -10 } });
+    await useStore.getState().refresh();
+    assert.deepEqual(useStore.getState().teams[0].space, { x: 55.5, y: -10, w: 1200, h: 480 });
+    firstSave.resolve(json({ ...teams[0], space: { ...teams[0].space, x: 55.5 }, revision: 2 }));
     await flush;
-    const t = useStore.getState().teams.find((t) => t.id === 'team1')!;
-    assert.equal(t.space.x, 55.5, 'dirty overlay preserves x after stale poll');
-    assert.equal(t.space.y, -10, 'dirty overlay preserves y after stale poll');
+    assert.equal(patches.length, 2);
+    assert.deepEqual(patches[1].space, { x: 55.5, y: -10 });
+    assert.deepEqual(useStore.getState().teams[0].space, { x: 55.5, y: -10, w: 1200, h: 480 });
   });
 
   test('successive partial space patches coalesce: both x and y reach server', async () => {

@@ -268,7 +268,8 @@ describe('PATCH /api/teams/:id space', () => {
     const viewerEmail = `v-${randomUUID()}@test.com`;
     const memberRes = await addMember(app, adminCookie, viewerEmail, 'member');
     const viewerId = memberRes.json().id;
-    await assignTeamRole(app, adminCookie, teamId, viewerId, 'viewer');
+    assert.equal(memberRes.statusCode, 201, memberRes.body);
+    assert.equal((await assignTeamRole(app, adminCookie, teamId, viewerId, 'viewer')).statusCode, 200);
     const viewerCookie = await loginAs(app, viewerEmail);
 
     const res = await app.inject({
@@ -291,7 +292,8 @@ describe('PATCH /api/teams/:id space', () => {
     const viewerEmail = `v2-${randomUUID()}@test.com`;
     const memberRes = await addMember(app, adminCookie, viewerEmail, 'member');
     const viewerId = memberRes.json().id;
-    await assignTeamRole(app, adminCookie, rootId, viewerId, 'viewer');
+    assert.equal(memberRes.statusCode, 201, memberRes.body);
+    assert.equal((await assignTeamRole(app, adminCookie, rootId, viewerId, 'viewer')).statusCode, 200);
     const viewerCookie = await loginAs(app, viewerEmail);
 
     const res = await app.inject({
