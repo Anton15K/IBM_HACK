@@ -130,7 +130,7 @@ export default function WorkspaceEditor({
   const [browseError, setBrowseError] = useState<string | null>(null);
 
   const canPrepare = useStore((state) => state.auth?.role === 'admin');
-  const [createKind, setCreateKind] = useState<'folder' | 'clone' | null>(null);
+  const [createKind, setCreateKind] = useState<'folder' | 'clone' | 'init' | null>(null);
   const [createName, setCreateName] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
   const [createParent, setCreateParent] = useState('');
@@ -147,7 +147,7 @@ export default function WorkspaceEditor({
       });
       setCreateKind(null);
       setCreateName('');
-      if (createKind === 'clone') {
+      if (createKind !== 'folder') {
         setDraft(result);
         setDirty(true);
         onPendingChange?.();
@@ -356,10 +356,13 @@ export default function WorkspaceEditor({
 
           {canPrepare && rootsConfigured && (
             <fieldset disabled={preparing || browseLoading} className="space-y-2 border-b border-line pb-2">
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 <button type="button" className="small-button" onClick={() => {
                   setCreateKind('folder'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
                 }}>New folder</button>
+                <button type="button" className="small-button" onClick={() => {
+                  setCreateKind('init'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
+                }}>New Git repository</button>
                 <button type="button" className="small-button" onClick={() => {
                   setCreateKind('clone'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
                 }}>Clone repository</button>
@@ -373,12 +376,13 @@ export default function WorkspaceEditor({
                 <label className="block">Folder name
                   <input className="form-input" value={createName} maxLength={80} onChange={(e) => setCreateName(e.target.value)} placeholder="my-project" />
                 </label>
+                {createKind === 'init' && <p className="text-muted text-[10px]">Creates a new folder with a Git repository on main and an empty initial commit by TeamWeave. No remote is connected.</p>}
                 {createKind === 'clone' && <label className="block">Public repository HTTPS URL
                   <input className="form-input" value={cloneUrl} onChange={(e) => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repository" />
                   <span className="text-muted text-[10px]">GitHub, GitLab or Bitbucket. Public repositories only; no keys or passwords.</span>
                 </label>}
                 <button type="button" className="small-button" disabled={!createName.trim() || !createParent || (createKind === 'clone' && !cloneUrl.trim())} onClick={() => void prepareWorkspace()}>
-                  {preparing ? 'Preparing…' : createKind === 'clone' ? 'Clone into new folder' : 'Create folder'}
+                  {preparing ? 'Preparing…' : createKind === 'clone' ? 'Clone into new folder' : createKind === 'init' ? 'Create Git repository' : 'Create folder'}
                 </button>
                 <button type="button" className="small-button ml-1" onClick={() => setCreateKind(null)}>Cancel</button>
               </div>}
@@ -480,7 +484,7 @@ export default function WorkspaceEditor({
       )}
 
       <p className="text-muted text-[10px]">
-        Browse server folders to select a Git workspace. Admins can create folders and clone public repositories. The checked-out
+        Browse server folders to select a Git workspace. Admins can create folders, initialize Git repositories and clone public repositories. The checked-out
         branch must match. Ref is resolved at start; this does not switch
         branches.
       </p>

@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { resolveBinding } from './workspace.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile, access } from 'node:fs/promises';
@@ -79,4 +81,21 @@ test('prepare endpoint requires authenticated admin and confines writes', async 
   app.db.prepare("UPDATE org_memberships SET role='member'").run();
   assert.equal((await app.inject({ ...authenticated, payload: { ...request.payload, name: 'denied' } })).statusCode, 403);
   await assert.rejects(access(join(root, 'denied')));
+});
+
+test('initializes a usable repository with an empty main commit, no remote and no overwrite', async t => {
+  const root = await fixture(t);
+  const body = { parentPath: root, name: 'fresh', kind: 'init' };
+  const result = await createWorkspace(body, [root]);
+  const binding = { path: result.path, branch: result.branch!, ref: result.ref! };
+  assert.deepEqual(binding, { path: join(root, 'fresh'), branch: 'main', ref: 'HEAD' });
+  await resolveBinding(binding, [root]);
+  const git = (...args: string[]) => execFileSync('git', ['-C', result.path, ...args], { encoding: 'utf8' }).trim();
+  assert.equal(git('status', '--porcelain'), '');
+  assert.equal(git('ls-tree', '-r', '--name-only', 'HEAD'), '');
+  assert.equal(git('remote'), '');
+  assert.equal(git('log', '-1', '--format=%an <%ae>'), 'TeamWeave <teamweave@localhost>');
+  const head = git('rev-parse', 'HEAD');
+  await assert.rejects(createWorkspace(body, [root]), /already exists/);
+  assert.equal(git('rev-parse', 'HEAD'), head);
 });

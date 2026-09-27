@@ -22,17 +22,31 @@ export function publicCloneUrl(value: unknown): string {
   return url.href;
 }
 
-export async function clonePublicRepository(url: string, destination: string): Promise<string> {
-  // Disable Git credential helpers, URL rewrites, templates and hooks. Never prompt.
+function isolatedGitEnv() {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/usr/bin/false' });
-  const options = { env, timeout: 90_000, maxBuffer: 1024 * 1024 };
+  return env;
+}
+
+export async function clonePublicRepository(url: string, destination: string): Promise<string> {
+  // Disable Git credential helpers, URL rewrites, templates and hooks. Never prompt.
+  const options = { env: isolatedGitEnv(), timeout: 90_000, maxBuffer: 1024 * 1024 };
   const config = ['-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null',
     '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'http.followRedirects=false'];
   await exec('git', [...config, 'clone', '--template=', '--depth=1', '--single-branch', '--', url, destination], options);
   const { stdout } = await exec('git', ['-C', destination, 'symbolic-ref', '--short', 'HEAD'], options);
   await exec('git', ['-C', destination, 'rev-parse', '--verify', 'HEAD'], options);
   return stdout.trim();
+}
+
+async function initializeRepository(destination: string): Promise<string> {
+  const options = { env: isolatedGitEnv(), timeout: 10_000, maxBuffer: 1024 * 1024 };
+  await exec('git', ['init', '--template=', '--initial-branch=main', '--', destination], options);
+  // The runner needs a resolvable HEAD. Disclose this empty setup commit in the UI.
+  await exec('git', ['-C', destination, '-c', 'core.hooksPath=/dev/null',
+    '-c', 'commit.gpgsign=false', '-c', 'user.name=TeamWeave', '-c', 'user.email=teamweave@localhost',
+    'commit', '--allow-empty', '-m', 'Initialize workspace'], options);
+  return 'main';
 }
 
 export async function createWorkspace(
@@ -42,7 +56,7 @@ export async function createWorkspace(
 ): Promise<{ path: string; branch?: string; ref?: string }> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail('Invalid request');
   const { parentPath, name, kind, url } = body as Record<string, unknown>;
-  if (kind !== 'folder' && kind !== 'clone') return fail('Choose folder or clone');
+  if (kind !== 'folder' && kind !== 'clone' && kind !== 'init') return fail('Choose folder, new Git repository or clone');
   if (typeof parentPath !== 'string' || !isAbsolute(parentPath)) return fail('Choose a parent folder');
   if (typeof name !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_. -]{0,79}$/.test(name) || name.trim() !== name || name.endsWith('.'))
     return fail('Folder name must be 1–80 characters without slashes, leading dots or trailing spaces');
@@ -58,11 +72,12 @@ export async function createWorkspace(
   }
   if (kind === 'folder') return { path };
   try {
-    const branch = await clone(cloneUrl!, path);
+    const branch = kind === 'init' ? await initializeRepository(path) : await clone(cloneUrl!, path);
     return { path, branch, ref: 'HEAD' };
   } catch {
     // This target was created exclusively by this request; never remove an existing path.
     await rm(path, { recursive: true, force: true });
+    if (kind === 'init') return fail('Could not initialize the Git repository on the server.', 422);
     return fail('Clone failed or timed out. Check that the repository is public, non-empty and the HTTPS URL is correct.', 422);
   }
 }

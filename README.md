@@ -112,3 +112,9 @@ submodules, disable credential helpers/redirects/hooks, and time out after 90
 seconds. A failed clone removes only its newly created target. Workspace roots
 remain shared host resources for trusted organizations; this is not a sandbox
 for untrusted public tenants.
+
+Use **New Git repository** to start without an existing remote. This creates a
+new folder, initializes branch `main`, and writes one empty setup commit authored
+by TeamWeave so the runner can resolve `HEAD`. The dialog discloses this commit;
+no source files or remote are added. Apply the binding to use it in a project.
+Existing directories are never reinitialized or overwritten.
