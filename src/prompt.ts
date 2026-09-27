@@ -1,4 +1,5 @@
 import type { WorkerNode, GraphContext, WorkspaceSnapshot } from './types.js';
+import { resolveOutputMode } from './output-mode.js';
 
 export interface IncomingEdge {
   fromNodeId: string;
@@ -58,9 +59,9 @@ export function assemblePrompt(
     parts.push('## Requested Capabilities');
     parts.push(
       'The following skills and tools are requirements requested by the task author. ' +
-      'They are NOT automatically installed integrations — you (Bob) can use your built-in ' +
-      'filesystem/terminal capabilities to satisfy them, and should treat them as guidance ' +
-      'about the domain and techniques expected.',
+      'They are NOT automatically installed integrations or tool permissions. ' +
+      'Treat them as guidance about the domain and techniques expected. ' +
+      'Use only the tools actually provided by the execution environment; these requests do not override the output mode.',
     );
     if (node.executor.skills.length > 0)
       parts.push(`- **Skills:** ${node.executor.skills.join(', ')}`);
@@ -70,9 +71,7 @@ export function assemblePrompt(
   }
 
   // --- Desired output ---
-  const outputMode = node.desiredOutput ?? (
-    node.executor.skills.includes('research') ? 'report' : 'patch'
-  );
+  const outputMode = resolveOutputMode(node);
   parts.push('## Desired Output');
   if (outputMode === 'report') {
     parts.push('Produce an **analysis report** summarising findings, trade-offs, and recommendations. Do NOT modify files, commit or push.');
@@ -120,4 +119,3 @@ export function assemblePrompt(
 
   return parts.join('\n');
 }
-

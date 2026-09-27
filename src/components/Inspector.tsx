@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore, sessionRequest } from '../store';
 import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
 import { assemblePrompt } from '../prompt';
+import { resolveOutputMode } from '../output-mode';
 import { previewInputs } from '../prompt-preview';
 import TaskResult, { type ResultAttempt } from './TaskResult';
 import { statusColor } from '../utils/colors';
@@ -574,10 +575,7 @@ export default function Inspector() {
                           <select
                             className="form-input mt-1"
                             value={
-                              node.desiredOutput ??
-                              (node.executor.skills.includes('research')
-                                ? 'report'
-                                : 'patch')
+                              resolveOutputMode(node)
                             }
                             onChange={(e) =>
                               update(node.id, {

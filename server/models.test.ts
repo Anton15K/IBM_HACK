@@ -11,6 +11,8 @@ import { dispatchTool, toolReadFile, toolWriteFile, toolListFiles, toolRunTests 
 import { validatePlan } from './routes/planner.js';
 import { openDb } from './db.js';
 import type { WorkerNode, GraphContext } from '../src/types.js';
+import { assemblePrompt } from '../src/prompt.js';
+import { resolveOutputMode } from '../src/output-mode.js';
 
 const secret = 'fixture-secret-not-a-real-api-key';
 const response = (content: string | null, calls?: unknown[]) => new Response(JSON.stringify({ id: 'req-fixture', choices: [{ finish_reason: calls ? 'tool_calls' : 'stop', message: { role: 'assistant', content, ...(calls ? { tool_calls: calls } : {}) } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }));
@@ -131,6 +133,53 @@ test('API executor edits actual Git fixture, runs tests, snapshots and records r
   const denied = await executeApiTask({ orgId: 'other', connectionId: c.id, modelService: service, input: { node: node(c.id), graph, incoming: [], assembledPrompt: '', signal: new AbortController().signal }, fetchFn: async () => { throw new Error('Should not fetch'); } });
   assert.equal(denied.status, 'failed');
 });
+
+for (const scenario of [
+  { name: 'unset mode and empty skills/tools', mode: undefined, skills: [], expected: 'patch' },
+  { name: 'unset mode with research', mode: undefined, skills: ['research'], expected: 'report' },
+  { name: 'explicit patch overrides research', mode: 'patch', skills: ['research'], expected: 'patch' },
+  { name: 'explicit report overrides coding guidance', mode: 'report', skills: ['coding'], expected: 'report' },
+] as const) {
+  test(`API tool permissions match displayed mode and prompt: ${scenario.name}`, async t => {
+    const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+    const db = openDb(':memory:'); t.after(() => db.close());
+    const modelService = new ModelService(db, ':memory:');
+    const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+    // JSON roundtrip reproduces an existing saved node with the mode omitted.
+    const task: WorkerNode = JSON.parse(JSON.stringify({ ...node(c.id), desiredOutput: scenario.mode }));
+    task.executor.skills = [...scenario.skills];
+    task.executor.tools = scenario.expected === 'report' ? ['write_file', 'terminal'] : [];
+    const graph: GraphContext = { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } };
+    const prompt = assemblePrompt(task, graph, [], null);
+    assert.equal(resolveOutputMode(task), scenario.expected);
+    assert.match(prompt, scenario.expected === 'patch' ? /Produce \*\*file edits\*\*/ : /Do NOT modify files/);
+    assert.ok(!prompt.includes('you (Bob)'));
+    let requests = 0;
+    const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+      input: { node: task, graph, incoming: [], assembledPrompt: prompt, allowedRoots: [path], signal: new AbortController().signal },
+      fetchFn: async (_url, options) => {
+        const body = JSON.parse(options?.body as string);
+        assert.deepEqual(body.tools.map((tool: { function: { name: string } }) => tool.function.name),
+          scenario.expected === 'patch' ? ['list_files', 'read_file', 'write_file', 'run_tests'] : ['list_files', 'read_file']);
+        assert.ok(body.messages[0].content.includes(`Output mode: ${scenario.expected}.`));
+        if (++requests === 1) return response(null, [call('write_file', { path: 'add.mjs', content: 'export const add = (a,b) => a+b;\n' }), call('run_tests', {})]);
+        const toolResults = body.messages.filter((message: { role: string }) => message.role === 'tool');
+        if (scenario.expected === 'patch') {
+          assert.match(toolResults[0].content, /^Written /);
+          assert.match(toolResults[1].content, /Exit code: 0/);
+        } else {
+          assert.match(toolResults[0].content, /write_file is not available in report mode/);
+          assert.match(toolResults[1].content, /run_tests is not available in report mode/);
+        }
+        return response(scenario.expected === 'patch' ? 'Fixed and tested' : 'Report mode prevents changing files');
+      },
+    });
+    assert.equal(requests, 2);
+    assert.equal(result.status, 'done');
+    assert.equal(await readFile(join(path, 'add.mjs'), 'utf8'), scenario.expected === 'patch' ? 'export const add = (a,b) => a+b;\n' : 'export const add = (a,b) => a-b;\n');
+    if (result.status === 'done') assert.deepEqual(result.output.artifacts, scenario.expected === 'patch' ? ['add.mjs'] : []);
+  });
+}
 
 test('API tasks can finish after more than eight model rounds', async t => {
   const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));

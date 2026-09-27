@@ -45,6 +45,7 @@ Enter that same base URL, the model ID from the server, and its API token in **M
 - **AI plan** generates a small proposed graph. Review it and click **Apply plan** to create draft nodes. Applying does not execute tasks; a stale proposal must be regenerated.
 - Each worker chooses a provider and, for API models, a connection. **Run pending tasks** respects dependencies and review gates; a node can also be run individually.
 - API `report` tasks can list/read files. API `patch` tasks can also write files and run the fixed `node --test` command. Other test frameworks and arbitrary shell commands are not exposed by this API executor.
+- The editor, prompt and executor share the same output default, including saved nodes without an explicit mode: `research` skill selects `report`, otherwise `patch`. An explicit output mode takes precedence. Skills/tools are prompt guidance, not installed integrations or permission grants; requesting a write tool cannot bypass `report` restrictions.
 - API runs use at most 32 model rounds, up to 65,536 output tokens per request (default 1,024; individual models may impose lower limits), and a ten-minute execution deadline. Displayed API token usage is separate from Bobcoins. Missing provider usage is not treated as zero.
 - `report` and `patch` are supported outputs. Automatic commits and pull requests are not implemented.
 

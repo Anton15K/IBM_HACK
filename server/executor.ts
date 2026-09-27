@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import type { WorkerNode, GraphContext, WorkspaceSnapshot, AttemptIdentity, AttemptMeta } from '../src/types.js';
 import { runWithWorkspace, captureSnapshot } from './workspace.js';
 import { assemblePrompt, type IncomingEdge } from '../src/prompt.js';
+import { resolveOutputMode } from '../src/output-mode.js';
 export { assemblePrompt, type IncomingEdge } from '../src/prompt.js';
 
 // ---------------------------------------------------------------------------
@@ -333,7 +334,7 @@ export async function executeTask(input: ExecuteTaskInput): Promise<ExecuteTaskR
   }
 
   // --- Unsupported output modes fail before spawn ---
-  const desiredOutput = node.desiredOutput;
+  const desiredOutput = resolveOutputMode(node);
   if (desiredOutput === 'commit' || desiredOutput === 'pull_request') {
     const meta: AttemptMeta = {
       provider,
