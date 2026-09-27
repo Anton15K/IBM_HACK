@@ -23,11 +23,22 @@ export default function StatusLegend() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="absolute bottom-4 left-4 z-20">
+    /* Placed in a ReactFlow Panel bottom-left with extra margin to clear the
+       built-in Controls (Fit View / zoom) which sit at bottom-left by default.
+       We use bottom-[10px] left-[10px] and the Controls sit at their default
+       position; the legend button is visually right-shifted via the parent
+       Panel. To avoid overlap with React Flow's own Controls block we mount
+       the button via a wrapper that the caller places in a Panel slot. */
+    <div style={{ position: 'relative' }}>
       {open && (
         <div
-          className="absolute bottom-10 left-0 w-64 rounded-[14px] p-3 shadow-panel"
-          style={{ background: '#0e1219', border: '1px solid #242C3D' }}
+          className="absolute w-64 rounded-[14px] p-3 shadow-panel"
+          style={{
+            bottom: 'calc(100% + 8px)',
+            left: 0,
+            background: '#0e1219',
+            border: '1px solid #242C3D',
+          }}
         >
           <div className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#5A6480' }}>
             Status
@@ -67,14 +78,18 @@ export default function StatusLegend() {
 
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold transition-colors"
+        aria-label="Status and priority legend"
+        aria-expanded={open}
+        className="flex items-center justify-center text-[13px] font-bold transition-colors"
         style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
           background: open ? '#5B8CFF' : '#161B28',
           color: open ? '#fff' : '#8B94A7',
           border: '1px solid #242C3D',
           boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
         }}
-        title="Status & priority legend"
       >
         ?
       </button>

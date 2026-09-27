@@ -30,6 +30,12 @@
   }
 }
 
+/* ─── Indeterminate progress bar ─────────────────────────────────────────── */
+@keyframes indeterminate_slide {
+  0%   { left: -50%; }
+  100% { left: 110%; }
+}
+
 /* ─── Node running pulse ──────────────────────────────────────────────────── */
 @keyframes pulse_run {
   0%, 100% {
@@ -127,9 +133,9 @@
   display: none;
 }
 
-.form-input { width:100%; background:#111725; border:1px solid #242C3D; border-radius:8px; padding:7px 10px; color:#E4EAF4; font-size:12px; outline:none; }
+.form-input { width:100%; background:#111725; border:1px solid #242C3D; border-radius:8px; padding:7px 10px; color:#E4EAF4; font-size:14px; outline:none; }
 .form-input:focus { border-color:#5B8CFF; }
-.action-button,.small-button { border:1px solid #242C3D; border-radius:8px; padding:6px 10px; font-size:11px; }
+.action-button,.small-button { border:1px solid #242C3D; border-radius:8px; padding:7px 12px; font-size:13px; }
 .action-button { color:#5B8CFF; background:#5B8CFF22; border-color:#5B8CFF44; }
 .small-button { background:#111725; color:#B0BAD0; }
 button:disabled,fieldset:disabled { opacity:.5; }

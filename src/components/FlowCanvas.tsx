@@ -588,7 +588,7 @@ function Canvas() {
             }
           }}
           fitView
-          fitViewOptions={{ padding: 0.2 }}
+          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
           minZoom={0.15}
           maxZoom={2}
         >
@@ -609,9 +609,12 @@ function Canvas() {
               maskColor="rgba(7,10,16,.72)"
               maskStrokeColor="#5B8CFF"
               maskStrokeWidth={1}
-              style={{ bottom: 44 }}
+              style={{ bottom: 48 }}
             />
           )}
+          <Panel position="bottom-left" style={{ marginBottom: 56, marginLeft: 4 }}>
+            {board && <StatusLegend />}
+          </Panel>
           <Panel position="bottom-right">
             <button
               type="button"
@@ -661,8 +664,6 @@ function Canvas() {
           )}
         </div>
       )}
-
-      {board && <StatusLegend />}
 
       {/* Edge editor popover */}
       {edgeEditor && (

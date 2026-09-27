@@ -176,17 +176,25 @@ export const WorkerNodeCard = memo(function WorkerNodeCard({ data, selected }: N
         </div>
       </div>
 
-      {/* Progress bar — running/rework/done */}
+      {/* Activity / progress — running shows indeterminate; done/rework shows actual progress */}
       {(isRunning || isDone || node.status === 'rework') && (
         <div className="px-3 pb-1.5">
-          <div className="h-1.5 bg-line rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-200"
-              style={{ width: isRunning ? '50%' : `${node.progress}%`, backgroundColor: color }}
-            />
-          </div>
-          {isRunning && (
-            <div className="text-[10px] mt-0.5 text-right" style={{ color: '#B0BAD0' }}>Working on backend</div>
+          {isRunning ? (
+            /* Indeterminate animated bar — no fabricated percentage */
+            <div className="h-1.5 bg-line rounded-full overflow-hidden relative">
+              <div className="absolute inset-y-0 rounded-full" style={{
+                width: '40%',
+                backgroundColor: color,
+                animation: 'indeterminate_slide 1.4s ease-in-out infinite',
+              }} />
+            </div>
+          ) : (
+            <div className="h-1.5 bg-line rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${node.progress}%`, backgroundColor: color }}
+              />
+            </div>
           )}
         </div>
       )}
