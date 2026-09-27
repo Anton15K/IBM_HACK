@@ -113,6 +113,7 @@ describe('createNode position', () => {
     const p = makeProject();
     let posted: Record<string, unknown> | undefined;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/nodes' && init?.method === 'POST') {
         posted = JSON.parse(String(init.body));
         return json({ ...makeNode('n2'), position: posted?.position as WorkerNode['position'], revision: 2 });
@@ -131,6 +132,7 @@ describe('createNode position', () => {
     // project has 1 node already, so next x = 80 + 1*240 = 320
     let posted: Record<string, unknown> | undefined;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/nodes' && init?.method === 'POST') {
         posted = JSON.parse(String(init.body));
         return json({ ...makeNode('n2'), revision: 2 });
@@ -148,6 +150,7 @@ describe('createNode position', () => {
     const p = makeProject();
     let posted: Record<string, unknown> | undefined;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/nodes' && init?.method === 'POST') {
         posted = JSON.parse(String(init.body));
         return json({ ...makeNode('n2'), revision: 2 });
@@ -177,6 +180,7 @@ describe('createTeam', () => {
       space: { x: 10, y: 20, w: 1200, h: 480 },
     };
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/teams' && init?.method === 'POST') {
         postedBody = JSON.parse(String(init.body));
         return json({ ...createdTeam, revision: 2 }, 201);
@@ -204,6 +208,7 @@ describe('createTeam', () => {
     const createdGraph = { ...graph, id: 'new-graph', teamId: createdTeam.id };
     let projectReads = 0;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/project') {
         projectReads++;
         if (projectReads === 1) return oldPoll.promise;
@@ -244,6 +249,7 @@ describe('createTeam', () => {
     const postStarted = deferred<void>();
     let projectReads = 0;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/project') {
         projectReads++;
         return oldPoll.promise;
@@ -274,6 +280,7 @@ describe('createTeam', () => {
     const p = makeProject();
     let postCalled = false;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/teams' && init?.method === 'POST') {
         postCalled = true;
         return json({}, 201);
@@ -292,6 +299,7 @@ describe('createTeam', () => {
     const p = makeProject();
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/teams' && init?.method === 'POST') {
         postedBody = JSON.parse(String(init.body));
         return json({ id: 't2', name: 'T2', parentId: null, kind: 'department', space: { x: 0, y: 0, w: 0, h: 0 }, revision: 2 }, 201);
@@ -310,6 +318,7 @@ describe('createTeam', () => {
     const postDeferred = deferred<Response>();
     const postStarted = deferred<void>();
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/teams' && init?.method === 'POST') {
         postStarted.resolve();
         return postDeferred.promise;
@@ -378,6 +387,7 @@ describe('updateTeam', () => {
     const patchStarted = deferred<void>();
     const patches: Record<string, unknown>[] = [];
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (String(url) === '/api/project') return json(p);
       if (init?.method === 'PATCH') {
         patches.push(JSON.parse(String(init.body)));
@@ -409,6 +419,7 @@ describe('updateTeam', () => {
     const p = makeProject();
     const patches: Record<string, unknown>[] = [];
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (init?.method === 'PATCH') {
         patches.push(JSON.parse(String(init.body)));
         return json({ ...teams[0], space: { x: 11, y: 22, w: 1200, h: 480 }, revision: 2 });
@@ -442,6 +453,7 @@ describe('updateTeam', () => {
     const p = makeProject();
     const patchDeferred = deferred<Response>();
     globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
       if (init?.method === 'PATCH') return patchDeferred.promise;
       if (String(url) === '/api/project') return json(p);
       return json(null);

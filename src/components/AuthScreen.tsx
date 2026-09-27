@@ -19,15 +19,22 @@ export default function AuthScreen() {
             ? 'Create your company workspace'
             : 'Sign in to your company'}
         </p>
+        <p className="text-muted text-xs">
+          {register
+            ? 'Registration creates a new company. To join an existing team, log in with the account your administrator created.'
+            : 'Team members and administrators use the same login. Ask your company administrator for your email and password.'}
+        </p>
         {register && (
           <>
             <input
+              aria-label="Your name"
               name="name"
               required
               placeholder="Your name"
               className="form-input"
             />
             <input
+              aria-label="Company name"
               name="organizationName"
               required
               placeholder="Company name"
@@ -36,6 +43,7 @@ export default function AuthScreen() {
           </>
         )}
         <input
+          aria-label="Email"
           name="email"
           type="email"
           autoComplete="username"
@@ -44,6 +52,7 @@ export default function AuthScreen() {
           className="form-input"
         />
         <input
+          aria-label="Password"
           name="password"
           type="password"
           autoComplete={register ? 'new-password' : 'current-password'}
