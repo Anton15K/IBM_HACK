@@ -72,7 +72,7 @@ export interface WorkerNode {
     maxAttempts?: number;
     /** API model connection id (required when provider='api') */
     connectionId?: string;
-    /** Maximum output tokens for API provider (64–4096; default 1024) */
+    /** Maximum output tokens for API provider (64–65536; default 1024) */
     maxOutputTokens?: number;
   };
   context: {

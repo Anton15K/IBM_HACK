@@ -33,7 +33,7 @@ export const API_MAX_OUTPUT_TOKENS = 65_536;
 export const API_DEFAULT_OUTPUT_TOKENS = 1024;
 export const API_MAX_ITERATIONS = 32;
 export const API_MAX_TOOL_CALLS_PER_RESPONSE = 8;
-const MAX_RESPONSE_BYTES = 1 * 1024 * 1024; // 1 MiB
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024; // 4 MiB
 
 // Types
 
@@ -108,6 +108,7 @@ const RETRY_MAX_DELAY_MS = 15_000;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(Object.assign(new Error('Canceled'), { code: 'CANCELED' })); return; }
     const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
     function onAbort() { clearTimeout(t); reject(Object.assign(new Error('Canceled'), { code: 'CANCELED' })); }
     signal.addEventListener('abort', onAbort, { once: true });
@@ -263,6 +264,7 @@ export async function executeApiTask(
 
   let preparedBefore: WorkspaceSnapshot | null = null;
   let failedAfter: WorkspaceSnapshot | null = null;
+  let timedOut = false;
   let usageKnown = false;
   let usageIncomplete = false;
   const observedCommands: string[] = [];
@@ -313,7 +315,12 @@ Commit: ${snapshot.commitSha}`;
 
         // Set up abort controller with overall timeout
         const overallAbort = new AbortController();
-        const overallTimer = setTimeout(() => overallAbort.abort(), timeoutMs);
+        const overallTimer = setTimeout(() => {
+          if (!overallAbort.signal.aborted) {
+            timedOut = true;
+            overallAbort.abort();
+          }
+        }, timeoutMs);
         const outerAbortHandler = () => overallAbort.abort();
         signal.addEventListener('abort', outerAbortHandler, { once: true });
 
@@ -355,6 +362,7 @@ Commit: ${snapshot.commitSha}`;
                 fetchFn,
                 overallAbort.signal,
               );
+              if (signal.aborted || overallAbort.signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
             } catch (e: unknown) {
               if (signal.aborted || overallAbort.signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
               throw Object.assign(new Error('API request failed'), { code: 'API_FETCH_ERROR' });
@@ -461,6 +469,8 @@ Commit: ${snapshot.commitSha}`;
             throw Object.assign(new Error(`Agent loop exhausted after ${maxIterations} iterations without final answer`), { code: 'LOOP_EXHAUSTED' });
           }
         } catch (err) {
+          // Preserve the original failure cause while collecting the final snapshot.
+          clearTimeout(overallTimer);
           try { failedAfter = await captureSnapshot(effectiveBinding, allowedRoots); } catch { /* best effort, under lock */ }
           throw err;
         } finally {
@@ -511,7 +521,9 @@ Commit: ${snapshot.commitSha}`;
     const errMsg = err instanceof Error ? err.message : String(err);
     // Detect cancel/timeout
     const isCanceled = (err instanceof Error && ((err as NodeJS.ErrnoException).code === 'CANCELED' || err.message === 'Canceled')) || signal.aborted;
-    const errorMsg = isCanceled ? 'Execution was cancelled.' : errMsg;
+    const errorMsg = timedOut
+      ? `Execution timed out after ${timeoutMs / 1000} seconds.`
+      : isCanceled ? 'Execution was cancelled.' : errMsg;
 
     const meta: AttemptMeta = {
       provider: 'api',

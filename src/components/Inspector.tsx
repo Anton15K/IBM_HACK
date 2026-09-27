@@ -48,6 +48,33 @@ interface Handoff {
     attemptId?: string;
   } | null;
 }
+function OutputTokenInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { if (!focused) setDraft(String(value)); }, [value, focused]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!Number.isInteger(next) || next < 64 || next > 65536) {
+      setError('Enter a whole number from 64 to 65,536.');
+      return;
+    }
+    setError('');
+    setFocused(false);
+    if (next !== value) onChange(next);
+  };
+  return <label>
+    Max output tokens (64–65,536)
+    <input type="number" min={64} max={65536} step={1} className="form-input mt-1"
+      value={draft} aria-invalid={!!error} aria-describedby="output-token-help"
+      onFocus={() => setFocused(true)} onChange={event => { setDraft(event.target.value); setError(''); }}
+      onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} />
+    <span id="output-token-help" className={error ? 'text-err text-[10px]' : 'text-muted text-[10px]'}>
+      {error || 'Per request. The selected model may enforce a lower limit. Larger outputs can take longer and cost more.'}
+    </span>
+  </label>;
+}
+
 function ListInput({
   values,
   onChange,
@@ -364,25 +391,8 @@ export default function Inspector() {
                     Profile: {apiConnections.find((c) => c.id === node.executor.connectionId)?.label ?? node.executor.connectionId} · model: {node.executor.model}
                   </p>
                 )}
-                <label>
-                  Max output tokens (64–65536)
-                  <input
-                    type="number"
-                    min={64}
-                    max={65536}
-                    step={64}
-                    className="form-input mt-1"
-                    value={node.executor.maxOutputTokens ?? 1024}
-                    onChange={(e) =>
-                      update(node.id, {
-                        executor: {
-                          ...node.executor,
-                          maxOutputTokens: Math.min(65536, Math.max(64, Number(e.target.value) || 1024)),
-                        },
-                      })
-                    }
-                  />
-                </label>
+                <OutputTokenInput value={node.executor.maxOutputTokens ?? 1024}
+                  onChange={maxOutputTokens => update(node.id, { executor: { ...node.executor, maxOutputTokens } })} />
               </>
             )}
 

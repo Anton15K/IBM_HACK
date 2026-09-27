@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { buildApp } from './app.js';
 import { ModelService, validateBaseUrl } from './models.js';
-import { executeApiTask, fetchBounded, fetchBoundedWithRetry, providerHttpError, API_MAX_RETRIES } from './apiExecutor.js';
+import { executeApiTask, fetchBounded, fetchBoundedWithRetry, providerHttpError, API_MAX_RETRIES, API_DEFAULT_TIMEOUT_MS, API_DEFAULT_OUTPUT_TOKENS, API_MAX_OUTPUT_TOKENS } from './apiExecutor.js';
 import { dispatchTool, toolReadFile, toolWriteFile, toolListFiles, toolRunTests } from './modelTools.js';
 import { validatePlan } from './routes/planner.js';
 import { openDb } from './db.js';
@@ -161,7 +161,7 @@ test('file tools reject symlinks including dangling targets, secrets and report 
 });
 
 test('bounded response rejects excess data', async () => {
-  await assert.rejects(fetchBounded('https://api.z.ai/test', {}, async () => new Response('x'.repeat(1024 * 1024 + 1))), /size limit/);
+  await assert.rejects(fetchBounded('https://api.z.ai/test', {}, async () => new Response('x'.repeat(4 * 1024 * 1024 + 1))), /size limit/);
 });
 
 test('failed API call preserves mutations and known usage without leaking provider error text', async t => {
@@ -228,4 +228,66 @@ test('fetchBoundedWithRetry honors abort during backoff', async () => {
   await new Promise(r => setTimeout(r, 20));
   ctrl.abort();
   await assert.rejects(attempt, /Canceled/);
+});
+
+
+test('retry cancellation before backoff registration rejects without sleeping', async () => {
+  const ctrl = new AbortController();
+  let calls = 0;
+  const pending = fetchBoundedWithRetry('https://api.z.ai/x', { signal: ctrl.signal }, async () => {
+    calls++; ctrl.abort(); return new Response(null, { status: 503 });
+  }, ctrl.signal);
+  // Deterministic turn boundary: the old implementation still waits 1500ms here.
+  let settled = false;
+  const observed = pending.catch((error) => { assert.match(error.message, /Canceled/); settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, true);
+  await observed;
+  assert.equal(calls, 1);
+});
+
+test('API reports deadline expiry separately from manual cancellation and forwards large output limits', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const modelService = new ModelService(db, ':memory:');
+  const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  const graph: GraphContext = { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } };
+  for (const manual of [false, true]) {
+    const ctrl = new AbortController();
+    const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+      input: { node: node(c.id), graph, incoming: [], assembledPrompt: '', allowedRoots: [path], signal: ctrl.signal, timeoutMs: manual ? 1000 : 10 },
+      fetchFn: async (_url, options) => {
+        const signal = options!.signal!;
+        return new Promise<Response>((_resolve, reject) => {
+          const cancel = () => reject(new DOMException('Aborted', 'AbortError'));
+          signal.addEventListener('abort', cancel, { once: true });
+          if (manual) ctrl.abort();
+          else if (signal.aborted) cancel();
+        });
+      } });
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') {
+      assert.match(result.error, manual ? /cancelled/ : /timed out after 0.01 seconds/);
+      if (!manual) assert.doesNotMatch(result.error, /cancelled/);
+    }
+  }
+  assert.equal(API_DEFAULT_TIMEOUT_MS, 600_000);
+  assert.equal(API_DEFAULT_OUTPUT_TOKENS, 1024);
+  assert.equal(API_MAX_OUTPUT_TOKENS, 65_536);
+  for (const limit of [undefined, 65_536, 100_000]) {
+    const task = node(c.id); task.executor.maxOutputTokens = limit;
+    const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+      input: { node: task, graph, incoming: [], assembledPrompt: '', allowedRoots: [path], signal: new AbortController().signal },
+      fetchFn: async (_url, options) => {
+        assert.equal(JSON.parse(String(options!.body)).max_tokens, limit === undefined ? 1024 : 65_536);
+        return response('Complete report');
+      } });
+    assert.equal(result.status, 'done');
+  }
+});
+
+test('bounded response accepts long answers above the previous one MiB limit', async () => {
+  const body = 'x'.repeat(2 * 1024 * 1024);
+  const result = await fetchBounded('https://api.z.ai/test', {}, async () => new Response(body));
+  assert.equal(result.body.length, body.length);
 });
