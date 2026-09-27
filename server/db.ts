@@ -1,81 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Project, Team, WorkerNode, GraphContext, NodeTemplate } from '../src/types.js';
+import type { Project, Team, WorkerNode, GraphContext } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
-// Built-in templates (copied from seed, isBuiltIn=true)
+// Shared built-in templates (isBuiltIn=true)
 // ---------------------------------------------------------------------------
-export const BUILTIN_TEMPLATES: NodeTemplate[] = [
-  {
-    id: 'tpl-code-review',
-    name: 'Code Review',
-    description: 'Review code for quality, security, and best practices',
-    isBuiltIn: true,
-    defaults: {
-      type: 'gate',
-      priority: 'normal',
-      prompt: {
-        task: 'Review the provided code changes. Check for correctness, security issues, performance, code style, and test coverage. Approve or request changes.',
-        refinements: [],
-        comments: [],
-      },
-      executor: { provider: 'bob', model: 'bob-4', skills: ['code-review'], tools: ['code-editor'], maxIterations: 3 },
-      context: { files: [], extra: '' },
-    },
-  },
-  {
-    id: 'tpl-write-tests',
-    name: 'Write Tests',
-    description: 'Generate comprehensive tests for a module',
-    isBuiltIn: true,
-    defaults: {
-      type: 'worker',
-      priority: 'normal',
-      prompt: {
-        task: 'Write comprehensive unit and integration tests. Aim for >80% coverage. Include happy path, edge cases, and error scenarios.',
-        refinements: [],
-        comments: [],
-      },
-      executor: { provider: 'bob', model: 'bob-4', skills: ['testing'], tools: ['code-editor', 'terminal'], maxIterations: 5 },
-      context: { files: [], extra: '' },
-    },
-  },
-  {
-    id: 'tpl-fix-bug',
-    name: 'Fix Bug',
-    description: 'Diagnose and fix a reported bug',
-    isBuiltIn: true,
-    defaults: {
-      type: 'worker',
-      priority: 'high',
-      prompt: {
-        task: 'Diagnose the reported bug. Find root cause, implement fix, ensure no regression. Document the fix in the commit message.',
-        refinements: [],
-        comments: [],
-      },
-      executor: { provider: 'bob', model: 'bob-4', skills: ['debugging', 'backend'], tools: ['code-editor', 'terminal', 'debugger'], maxIterations: 8 },
-      context: { files: [], extra: '' },
-    },
-  },
-  {
-    id: 'tpl-investigate',
-    name: 'Investigate',
-    description: 'Research and document findings on a technical topic',
-    isBuiltIn: true,
-    defaults: {
-      type: 'inbox',
-      priority: 'normal',
-      prompt: {
-        task: 'Research the topic thoroughly. Compare at least 3 approaches. Document findings, trade-offs, and a clear recommendation.',
-        refinements: [],
-        comments: [],
-      },
-      executor: { provider: 'mock', model: 'mock-v1', skills: ['research'], tools: ['web-search'], maxIterations: 3 },
-      context: { files: [], extra: '' },
-    },
-  },
-];
+export { BUILTIN_TEMPLATES } from '../src/builtin-templates.js';
+import { BUILTIN_TEMPLATES } from '../src/builtin-templates.js';
 
 // ---------------------------------------------------------------------------
 // DB row types
@@ -205,7 +137,13 @@ export function readProject(db: DatabaseSync, orgId: string): { project: Project
     | { data: string; revision: number }
     | undefined;
   if (!row) return null;
-  return { project: JSON.parse(row.data) as Project, revision: row.revision };
+  const project = JSON.parse(row.data) as Project;
+  // Built-in definitions evolve; keep custom templates and existing nodes untouched.
+  project.templates = [
+    ...structuredClone(BUILTIN_TEMPLATES),
+    ...project.templates.filter(t => !BUILTIN_TEMPLATES.some(b => b.id === t.id)),
+  ];
+  return { project, revision: row.revision };
 }
 
 export function mutateProject(

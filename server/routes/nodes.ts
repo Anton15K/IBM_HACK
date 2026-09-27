@@ -35,7 +35,7 @@ function defaultNode(overrides: Partial<WorkerNode> & { id: string; teamId: stri
       model: 'mock-v1',
       skills: [],
       tools: [],
-      maxIterations: 5,
+      maxIterations: 12,
     },
     context: overrides.context ?? { files: [], extra: '' },
     owners: overrides.owners ?? { author: '', responsible: [] },

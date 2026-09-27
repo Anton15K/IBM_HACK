@@ -26,6 +26,7 @@ import { assemblePrompt } from './executor.js';
 import { dispatchTool, TOOL_DEFINITIONS } from './modelTools.js';
 import { validateBaseUrl, type ModelService } from './models.js';
 import { resolveOutputMode } from '../src/output-mode.js';
+import { readChatStream } from './modelStream.js';
 
 // Constants
 
@@ -67,6 +68,9 @@ export async function fetchBounded(
   const reader = response.body?.getReader();
   if (!reader) {
     return { ok: response.ok, status: response.status, body: '', requestId };
+  }
+  if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
+    return { ok: response.ok, status: response.status, body: await readChatStream(reader, MAX_RESPONSE_BYTES), requestId };
   }
 
   let received = 0;
@@ -143,6 +147,9 @@ function parseModelOutput(text: string): WorkerNode['output'] {
   // Try to extract JSON from fenced block or bare JSON
   let jsonStr = text.trim();
   const fenced = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const surroundingText = fenced
+    ? [jsonStr.slice(0, fenced.index), jsonStr.slice((fenced.index ?? 0) + fenced[0].length)].map(s => s.trim()).filter(Boolean).join('\n\n')
+    : '';
   if (fenced) jsonStr = fenced[1]!.trim();
 
   try {
@@ -153,7 +160,7 @@ function parseModelOutput(text: string): WorkerNode['output'] {
       if (typeof parsed.summary === 'string') {
         return {
           summary: parsed.summary,
-          results: strings(parsed.results),
+          results: [...strings(parsed.results), ...(surroundingText ? [surroundingText] : [])],
           commands: strings(parsed.commands),
           artifacts: strings(parsed.artifacts),
         };
@@ -260,6 +267,7 @@ export async function executeApiTask(
   // when max_tokens is set). Match by host only: model slugs on OpenRouter are
   // namespaced (z-ai/glm-…) and never collide with z.ai's bare slugs.
   const isGlm = new URL(baseUrl).hostname === 'api.z.ai';
+  const localGemma = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(baseUrl).hostname) && /gemma/i.test(model);
 
   const chatUrl = baseUrl.replace(/\/$/, '') + '/chat/completions';
 
@@ -291,9 +299,11 @@ export async function executeApiTask(
           'Only claim actions you have actually performed via tool calls.',
           'Do not dump the entire repository. Focus on the specific task.',
           `Output mode: ${outputMode}. Available tools: ${availableTools.map(t => t.function.name).join(', ')}.`,
-          reportOnly ? 'Do not modify files. If the task requires writing, explain that report mode prevents it in your final answer.' : 'Use write_file to create or edit files in the workspace; run_tests runs node --test only.',
+          reportOnly ? 'Do not modify files. If the task requires writing, explain that report mode prevents it in your final answer.' : 'Use write_file to create or edit files in the workspace; run_tests runs node --test only. New JavaScript tests should use node:test and node:assert/strict so failures produce a nonzero exit code; console.assert alone is not a test assertion.',
           'Do not call tools that are not available. There is no general shell tool.',
+          `You have at most ${maxIterations} model turns, including the final answer. Read only relevant files, reuse tool results, and reserve a turn for the final report.`,
           'When finished, return a JSON object with: summary (string), results (string[]), commands (string[]), artifacts (string[]).',
+          'Put substantive findings, comparisons and recommendations in results, not just claims that analysis was performed. Keep the final report concise.',
           'Only include commands and artifacts you actually observed from tool output.',
         ].join(' ');
 
@@ -320,6 +330,9 @@ Commit: ${snapshot.commitSha}`;
         let finalText = '';
         let lastRequestId: string | null = null;
         let iterations = 0;
+        let lastReadSignature = '';
+        let repeatedReads = 0;
+        let channelRecoveryUsed = false;
 
         // Set up abort controller with overall timeout
         const overallAbort = new AbortController();
@@ -340,14 +353,24 @@ Commit: ${snapshot.commitSha}`;
               throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
             }
 
+            const finalTurn = iterations === maxIterations;
+            if (finalTurn) {
+              messages.push({ role: 'user', content: 'This is the final model turn within the execution budget. No more tools are available. Return a concise final report based only on work actually performed and observed results. Explicitly state anything incomplete, failed or unverified; do not claim success for unfinished work.' });
+            }
+
             // Build request body
             const reqBody: Record<string, unknown> = {
               model,
               messages,
               max_tokens: maxOutputTokens,
               tools: availableTools,
-              tool_choice: 'auto',
+              tool_choice: finalTurn || (reportOnly && repeatedReads >= 3) ? 'none' : 'auto',
             };
+            if (localGemma) {
+              reqBody.stream = true;
+              reqBody.stream_options = { include_usage: true };
+              reqBody.temperature = 0.2;
+            }
 
             // z.ai glm models: add thinking disabled
             if (isGlm) {
@@ -373,6 +396,15 @@ Commit: ${snapshot.commitSha}`;
               if (signal.aborted || overallAbort.signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
             } catch (e: unknown) {
               if (signal.aborted || overallAbort.signal.aborted) throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
+              if ((e as { code?: string }).code === 'API_DEGENERATE_RESPONSE') {
+                usageIncomplete = true;
+                if (!channelRecoveryUsed && !finalTurn) {
+                  channelRecoveryUsed = true;
+                  messages.push({ role: 'user', content: 'The previous generation contained only repeated empty channel markers and was discarded. Continue from the existing evidence. Make the next necessary tool call or return the actual final result. Do not emit channel markers or repeat completed actions.' });
+                  continue;
+                }
+                throw new Error('Local model repeated empty channel markers; bounded recovery exhausted');
+              }
               throw Object.assign(new Error('API request failed'), { code: 'API_FETCH_ERROR' });
             }
 
@@ -417,7 +449,11 @@ Commit: ${snapshot.commitSha}`;
 
             const finishReason = choice.finish_reason as string | undefined;
             const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-            const textContent = typeof message.content === 'string' ? message.content : '';
+            // Some local adapters expose empty model channel delimiters as text.
+            // Echoing them back can seed a delimiter loop; they are not an answer.
+            const textContent = typeof message.content === 'string'
+              ? message.content.replace(/<\|channel>(?:thought|analysis|final|commentary)\s*(?:<channel\|>|(?=<\|channel>)|$)/g, '').trim()
+              : '';
 
             // Add assistant message to history
             messages.push({
@@ -436,6 +472,8 @@ Commit: ${snapshot.commitSha}`;
             // Process tool calls (bounded)
             if (toolCalls.length > API_MAX_TOOL_CALLS_PER_RESPONSE) throw new Error('Too many tool calls in one response');
             const boundedCalls = toolCalls;
+            const readSignatures: string[] = [];
+            let onlyReads = true;
             for (const tc of boundedCalls) {
               if (signal.aborted || overallAbort.signal.aborted) {
                 throw Object.assign(new Error('Canceled'), { code: 'CANCELED' });
@@ -456,6 +494,9 @@ Commit: ${snapshot.commitSha}`;
                 reportOnly,
                 overallAbort.signal,
               );
+              if (callName === 'read_file' || callName === 'list_files') {
+                readSignatures.push(JSON.stringify([callName, callArgs?.path ?? '.', toolResult.content]));
+              } else onlyReads = false;
 
               if (callName === 'run_tests' && !toolResult.content.startsWith('Error:')) {
                 observedCommands.push('node --test'); observedResults.push(toolResult.content);
@@ -466,6 +507,17 @@ Commit: ${snapshot.commitSha}`;
                 content: toolResult.content,
                 tool_call_id: toolResult.id,
               });
+            }
+
+            // Repeated unchanged reads can trap local models in a tool loop.
+            // Writes/tests reset this check; do not suppress legitimate read-after-write.
+            const readSignature = onlyReads ? JSON.stringify(readSignatures) : '';
+            repeatedReads = readSignature && readSignature === lastReadSignature ? repeatedReads + 1 : (readSignature ? 1 : 0);
+            lastReadSignature = readSignature;
+            if (repeatedReads >= (reportOnly ? 3 : 2)) {
+              messages.push({ role: 'user', content: reportOnly && repeatedReads >= 3
+                ? 'The same read-only calls returned unchanged results three times. Tools are disabled for the next response. Produce your final report from the evidence already read; clearly state any missing information and limitations. Do not claim unperformed work.'
+                : 'These read-only calls returned the same results again. Use the evidence already in the conversation. Stop repeating unchanged reads; finish your report or perform a different necessary action.' });
             }
 
             // If finish_reason is stop (and we somehow got here), break

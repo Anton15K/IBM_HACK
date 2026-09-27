@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { GraphContext, WorkerNode, WorkspaceSnapshot, ApiTokenUsage, ExecutionInitiator, RunMonitorItem, RunMonitorResponse } from '../src/types.js';
 import { mutateProject, readProject, requireTeamAccess } from './db.js';
 import { assemblePrompt, executeTask, type ExecuteTaskInput, type ExecuteTaskResult, type IncomingEdge } from './executor.js';
+import { sameWorkspaceContent } from './workspace.js';
 
 export type Executor = (input: ExecuteTaskInput) => Promise<ExecuteTaskResult>;
 type Output = WorkerNode['output'];
@@ -15,6 +16,7 @@ export interface Attempt {
   status: 'running' | 'waiting' | 'done' | 'failed'; output?: Output; error?: string;
   taskId: string | null; sessionCosts: number | null; apiUsage?: ApiTokenUsage; model?: string;
   workspaceBefore: WorkspaceSnapshot | null; workspaceAfter: WorkspaceSnapshot | null;
+  workspaceValidated?: boolean;
   decision?: { decision: 'approve' | 'request_changes'; actor: string; feedback?: string; targetNodeId?: string; ts: string };
 }
 export interface Run {
@@ -213,11 +215,11 @@ export class Runtime {
   private checkpoint(a: Attempt, repositoryPath: string): WorkspaceSnapshot | undefined {
     const attempts = (this.db.prepare('SELECT payload FROM execution_attempts WHERE orgId=? AND graphId=?').all(a.orgId, a.graphId) as { payload: string }[]).map(row => JSON.parse(row.payload) as Attempt);
     // The graph owns cumulative worktree edits, while dependency results remain pinned.
-    const completed = attempts.filter(p => p.node.type === 'worker' && p.status === 'done' && p.workspaceAfter?.repositoryPath === repositoryPath).sort((x, y) => (y.finishedAt ?? '').localeCompare(x.finishedAt ?? ''))[0];
+    const completed = attempts.filter(p => p.node.type === 'worker' && (p.status === 'done' || (p.status === 'failed' && p.workspaceValidated)) && p.workspaceAfter?.repositoryPath === repositoryPath).sort((x, y) => (y.finishedAt ?? '').localeCompare(x.finishedAt ?? ''))[0];
     if (completed?.workspaceAfter) return completed.workspaceAfter;
     const incoming = a.incoming.filter(i => i.workspaceAfter?.repositoryPath === repositoryPath).sort((x, y) => (y.finishedAt ?? '').localeCompare(x.finishedAt ?? ''))[0];
     if (incoming?.workspaceAfter) return incoming.workspaceAfter;
-    // A first failed/canceled execution cannot silently authorize its own edits.
+    // Legacy failures or rejected preflight checks cannot authorize their edits.
     return attempts.filter(p => p.id !== a.id && p.node.type === 'worker' && p.workspaceBefore?.repositoryPath === repositoryPath).sort((x, y) => x.startedAt.localeCompare(y.startedAt))[0]?.workspaceBefore ?? undefined;
   }
   private dispatch(orgId: string, node: WorkerNode, incoming: IncomingEdge[], runId?: string, initiator?: ExecutionInitiator): Attempt {
@@ -240,7 +242,9 @@ export class Runtime {
             a.workspaceBefore = workspaceBefore; a.assembledPrompt = assembledPrompt; this.saveAttempt(a);
             this.updateNode(orgId, node.id, n => n.currentAttemptId === a.id ? { ...n, status: 'running' } : n);
             const prior = workspaceBefore ? this.checkpoint(a, workspaceBefore.repositoryPath) : undefined;
-            if (prior && prior.fingerprint !== workspaceBefore?.fingerprint) fail('Workspace drift from graph checkpoint; review and restore the worktree before retrying');
+            if (prior && workspaceBefore && !sameWorkspaceContent(prior, workspaceBefore)) fail('Workspace drift from graph checkpoint; review and restore the worktree before retrying');
+            a.workspaceValidated = true;
+            this.saveAttempt(a);
           } });
         this.finish(a, result, controller.signal.aborted ? 'Canceled' : undefined);
       } catch (error) { this.finish(a, undefined, error instanceof Error ? error.message : 'Execution failed'); }

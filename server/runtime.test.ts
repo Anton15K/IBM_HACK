@@ -235,6 +235,23 @@ test('queued child accepts sibling graph checkpoint without changing its pinned 
   assert.equal(f.calls.at(-1)!.incoming[0]!.workspaceAfter!.fingerprint, 'a-patch');
 });
 
+test('retry preserves a failed worker patch but never blesses rejected workspace drift', async t => {
+  const f = fixture([node('code')]); t.after(() => f.app.close());
+  f.setWorkspace(snapshot('initial')); await f.request('POST', '/api/nodes/code/run'); await tick();
+  f.setWorkspace(snapshot('partial-patch')); f.finish('code', 'failed'); await tick();
+  assert.equal(f.runtime.attempts('org', 'code')[0]!.workspaceValidated, true);
+  await f.request('POST', '/api/nodes/code/run'); await tick();
+  assert.equal(f.runtime.node('org', 'code').status, 'running');
+  f.finish('code'); await tick();
+  f.setWorkspace(snapshot('external-change'));
+  for (let i = 0; i < 2; i++) {
+    await f.request('POST', '/api/nodes/code/run'); await tick();
+    const a = f.runtime.attempts('org', 'code').at(-1)!;
+    assert.equal(a.status, 'failed'); assert.match(a.error!, /graph checkpoint/);
+    assert.notEqual(a.workspaceValidated, true);
+  }
+});
+
 test('explicit reruns continue own checkpoint but another graph cannot authorize outside edits', async t => {
   const f = fixture([node('code')]); t.after(() => f.app.close());
   f.setWorkspace(snapshot('initial')); await f.request('POST', '/api/nodes/code/run'); await tick();

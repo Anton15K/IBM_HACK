@@ -1,3 +1,4 @@
+import { BUILTIN_TEMPLATES } from './builtin-templates';
 import type { Project } from './types';
 
 export const SEED_PROJECT: Project = {
@@ -350,74 +351,5 @@ export const SEED_PROJECT: Project = {
       conventions: 'TypeScript strict, Express 5, Jest for tests',
     },
   ],
-  templates: [
-    {
-      id: 'tpl-code-review',
-      name: 'Code Review',
-      description: 'Review code for quality, security, and best practices',
-      isBuiltIn: true,
-      defaults: {
-        type: 'gate',
-        priority: 'normal',
-        prompt: {
-          task: 'Review the provided code changes. Check for correctness, security issues, performance, code style, and test coverage. Approve or request changes.',
-          refinements: [],
-          comments: [],
-        },
-        executor: { provider: 'bob', model: 'bob-4', skills: ['code-review'], tools: ['code-editor'], maxIterations: 3 },
-        context: { files: [], extra: '' },
-      },
-    },
-    {
-      id: 'tpl-write-tests',
-      name: 'Write Tests',
-      description: 'Generate comprehensive tests for a module',
-      isBuiltIn: true,
-      defaults: {
-        type: 'worker',
-        priority: 'normal',
-        prompt: {
-          task: 'Write comprehensive unit and integration tests. Aim for >80% coverage. Include happy path, edge cases, and error scenarios.',
-          refinements: [],
-          comments: [],
-        },
-        executor: { provider: 'bob', model: 'bob-4', skills: ['testing'], tools: ['code-editor', 'terminal'], maxIterations: 5 },
-        context: { files: [], extra: '' },
-      },
-    },
-    {
-      id: 'tpl-fix-bug',
-      name: 'Fix Bug',
-      description: 'Diagnose and fix a reported bug',
-      isBuiltIn: true,
-      defaults: {
-        type: 'worker',
-        priority: 'high',
-        prompt: {
-          task: 'Diagnose the reported bug. Find root cause, implement fix, ensure no regression. Document the fix in the commit message.',
-          refinements: [],
-          comments: [],
-        },
-        executor: { provider: 'bob', model: 'bob-4', skills: ['debugging', 'backend'], tools: ['code-editor', 'terminal', 'debugger'], maxIterations: 8 },
-        context: { files: [], extra: '' },
-      },
-    },
-    {
-      id: 'tpl-investigate',
-      name: 'Investigate',
-      description: 'Research and document findings on a technical topic',
-      isBuiltIn: true,
-      defaults: {
-        type: 'inbox',
-        priority: 'normal',
-        prompt: {
-          task: 'Research the topic thoroughly. Compare at least 3 approaches. Document findings, trade-offs, and a clear recommendation.',
-          refinements: [],
-          comments: [],
-        },
-        executor: { provider: 'mock', model: 'mock-v1', skills: ['research'], tools: ['web-search'], maxIterations: 3 },
-        context: { files: [], extra: '' },
-      },
-    },
-  ],
+  templates: structuredClone(BUILTIN_TEMPLATES),
 };

@@ -221,7 +221,7 @@ export interface NodeTemplate {
   description: string;
   isBuiltIn: boolean;
   defaults: Partial<
-    Pick<WorkerNode, 'type' | 'prompt' | 'executor' | 'context' | 'priority'>
+    Pick<WorkerNode, 'type' | 'prompt' | 'executor' | 'context' | 'priority' | 'desiredOutput'>
   >;
 }
 

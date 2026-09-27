@@ -25,6 +25,28 @@ import type { WorkspaceBinding, WorkspaceSnapshot } from '../src/types.js';
 
 const execFile = promisify(_execFile);
 
+function isFinderMetadata(path: string): boolean {
+  return path.split('/').at(-1) === '.DS_Store';
+}
+
+/** Keep metadata in the snapshot for inspection, but not in code drift checks. */
+function contentFingerprint(snapshot: Pick<WorkspaceSnapshot, 'commitSha' | 'dirty' | 'trackedDiff' | 'untracked'>): string {
+  const relevant = snapshot.untracked.filter(file => !isFinderMetadata(file.path));
+  const onlyMetadata = snapshot.untracked.length > 0 && relevant.length === 0 && !snapshot.trackedDiff;
+  const hash = createHash('sha256').update(snapshot.commitSha)
+    .update(snapshot.dirty && !onlyMetadata ? '1' : '0')
+    .update(Buffer.from(snapshot.trackedDiff, 'base64'));
+  for (const file of relevant) hash.update(file.path).update(file.sha256);
+  return hash.digest('hex');
+}
+
+export function sameWorkspaceContent(a: WorkspaceSnapshot, b: WorkspaceSnapshot): boolean {
+  if (a.fingerprint === b.fingerprint) return true;
+  // Compatibility with snapshots recorded before Finder metadata was excluded.
+  if (![...a.untracked, ...b.untracked].some(file => isFinderMetadata(file.path))) return false;
+  return a.commitSha === b.commitSha && contentFingerprint(a) === contentFingerprint(b);
+}
+
 // ---------------------------------------------------------------------------
 // Limits
 // ---------------------------------------------------------------------------
@@ -272,10 +294,6 @@ export async function captureSnapshot(
     );
 
   const untracked: { path: string; sha256: string }[] = [];
-  const fingerprintHasher = createHash('sha256');
-  fingerprintHasher.update(commitSha);
-  fingerprintHasher.update(dirty ? '1' : '0');
-  fingerprintHasher.update(trackedDiffBuf);
 
   let totalUntrackedBytes = 0;
 
@@ -325,11 +343,9 @@ export async function captureSnapshot(
 
     const sha256 = createHash('sha256').update(content).digest('hex');
     untracked.push({ path: relPath, sha256 });
-    fingerprintHasher.update(relPath);
-    fingerprintHasher.update(sha256);
   }
 
-  const fingerprint = fingerprintHasher.digest('hex');
+  const fingerprint = contentFingerprint({ commitSha, dirty, trackedDiff, untracked });
 
   return {
     path: resolvedPath,

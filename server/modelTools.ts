@@ -36,7 +36,7 @@ export const TEST_TIMEOUT_MS = 20_000;
 const BLOCKED_FILENAME_RE = /(?:^|[/\\])(?:\.env|\.env\..+|api[_-]?key|.*credentials?.*|.*secret.*|.*password.*|.*private[_-]?key.*|.*\.pem|.*\.key)$/i;
 
 function isBlockedFile(name: string): boolean {
-  return BLOCKED_FILENAME_RE.test(name) || /^(?:id_rsa|id_ed25519|\.npmrc|\.netrc|\.teamweave_model_key)$/i.test(name);
+  return BLOCKED_FILENAME_RE.test(name) || /^(?:id_rsa|id_ed25519|\.npmrc|\.netrc|\.teamweave_model_key|\.DS_Store)$/i.test(name);
 }
 
 const BLOCKED_DIR_RE = /(?:^|[/\\])(?:\.git|node_modules|\.ssh|\.aws|\.bob|\.\x63\x6f\x64\x65\x78)(?:[/\\]|$)/;

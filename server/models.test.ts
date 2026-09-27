@@ -123,11 +123,14 @@ test('API executor edits actual Git fixture, runs tests, snapshots and records r
     requests++;
     if (requests === 1) return response(null, [call('write_file', { path: 'add.mjs', content: 'export const add = (a,b) => a+b;\n' }), call('run_tests', {})]);
     assert.match(JSON.stringify(body.messages), /Exit code: 0/);
-    return response(JSON.stringify({ summary: 'Fixed', results: [], commands: ['invented shell'], artifacts: ['invented-file'] }));
+    return response('```json\n' + JSON.stringify({ summary: 'Fixed', results: [], commands: ['invented shell'], artifacts: ['invented-file'] }) + '\n```\n\nDetailed verification: addition now includes both operands.');
   } });
   assert.equal(result.status, 'done'); assert.equal(result.meta.model, profile.model); assert.equal(result.sessionCosts, null); assert.equal(result.meta.apiUsage?.totalTokens, 30);
   assert.notEqual(result.workspaceBefore?.fingerprint, result.workspaceAfter?.fingerprint);
-  if (result.status === 'done') { assert.deepEqual(result.output.commands, ['node --test']); assert.deepEqual(result.output.artifacts, ['add.mjs']); }
+  if (result.status === 'done') {
+    assert.deepEqual(result.output.commands, ['node --test']); assert.deepEqual(result.output.artifacts, ['add.mjs']);
+    assert.ok(result.output.results.includes('Detailed verification: addition now includes both operands.'));
+  }
   assert.match(await readFile(join(path, 'add.mjs'), 'utf8'), /a\+b/);
   execFileSync(process.execPath, ['--test'], { cwd: path, env: { PATH: process.env.PATH } });
   const denied = await executeApiTask({ orgId: 'other', connectionId: c.id, modelService: service, input: { node: node(c.id), graph, incoming: [], assembledPrompt: '', signal: new AbortController().signal }, fetchFn: async () => { throw new Error('Should not fetch'); } });
@@ -180,6 +183,97 @@ for (const scenario of [
     if (result.status === 'done') assert.deepEqual(result.output.artifacts, scenario.expected === 'patch' ? ['add.mjs'] : []);
   });
 }
+
+test('unchanged report reads trigger a final evidence-based response, not a fabricated result', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const modelService = new ModelService(db, ':memory:');
+  const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  const task = node(c.id); task.desiredOutput = 'report'; task.executor.maxIterations = 6;
+  let requests = 0;
+  const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+    input: { node: task, graph: { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } }, incoming: [], assembledPrompt: 'Review add.mjs', allowedRoots: [path], signal: new AbortController().signal },
+    fetchFn: async (_url, options) => {
+      const body = JSON.parse(options?.body as string);
+      for (const message of body.messages) {
+        if (message.role === 'assistant') assert.ok(!String(message.content).includes('<|channel>'));
+      }
+      if (++requests <= 3) {
+        assert.equal(body.tool_choice, 'auto');
+        return response('<|channel>thought\n<channel|>', [call('read_file', { path: 'add.mjs' }, `read-${requests}`)]);
+      }
+      assert.equal(body.tool_choice, 'none');
+      assert.match(body.messages.at(-1).content, /missing information and limitations/);
+      return response('The implementation subtracts rather than adds. Tests were not run in report mode.');
+    } });
+  assert.equal(requests, 4); assert.equal(result.status, 'done');
+  if (result.status === 'done') {
+    assert.match(result.output.summary, /subtracts/);
+    assert.deepEqual(result.output.commands, []); assert.deepEqual(result.output.artifacts, []);
+  }
+  assert.equal(await readFile(join(path, 'add.mjs'), 'utf8'), 'export const add = (a,b) => a-b;\n');
+});
+
+test('a streamed channel loop is canceled and recovered once without replaying tool actions', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const modelService = new ModelService(db, ':memory:');
+  const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  for (const recover of [true, false]) {
+    const task = node(c.id); task.executor.maxIterations = 5;
+    let requests = 0;
+    const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+      input: { node: task, graph: { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } }, incoming: [], assembledPrompt: 'Fix', allowedRoots: [path], signal: new AbortController().signal },
+      fetchFn: async (_url, options) => {
+        const body = JSON.parse(options?.body as string);
+        if (++requests === 1) return response(null, [call('write_file', { path: 'add.mjs', content: 'export const add = (a,b) => a+b;\n' })]);
+        if (requests === 3) {
+          assert.equal(body.messages.filter((m: {role: string}) => m.role === 'tool').length, 1);
+          assert.ok(!JSON.stringify(body.messages).includes('<|channel>'));
+          if (recover) return response('Fixed addition. Tests not run.');
+        }
+        return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: '<|channel>thought\n<channel|>'.repeat(8) } }] }) + '\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      } });
+    assert.equal(requests, 3);
+    assert.equal(result.status, recover ? 'done' : 'failed');
+    if (result.status === 'done') assert.deepEqual(result.output.artifacts, ['add.mjs']);
+    if (result.status === 'failed') assert.match(result.error, /bounded recovery exhausted/);
+  }
+});
+
+test('empty channel delimiters alone cannot complete an API task', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const modelService = new ModelService(db, ':memory:');
+  const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  for (const text of ['<|channel>thought\n<channel|>', '<|channel>thought\n<|channel>thought']) {
+    const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+      input: { node: node(c.id), graph: { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } }, incoming: [], assembledPrompt: 'Review', allowedRoots: [path], signal: new AbortController().signal },
+      fetchFn: async () => response(text) });
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') assert.match(result.error, /no complete final answer/);
+  }
+});
+
+test('the final bounded turn requests a real report after patch tool execution', async t => {
+  const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));
+  const db = openDb(':memory:'); t.after(() => db.close());
+  const modelService = new ModelService(db, ':memory:');
+  const c = await modelService.create('org', profile.label, profile.baseUrl, profile.model, secret);
+  const task = node(c.id); task.executor.maxIterations = 2;
+  let requests = 0;
+  const result = await executeApiTask({ orgId: 'org', connectionId: c.id, modelService,
+    input: { node: task, graph: { id: 'g', teamId: 't', goal: '', repo: '', conventions: '', workspace: { path, branch: 'main', ref: 'HEAD' } }, incoming: [], assembledPrompt: 'Fix', allowedRoots: [path], signal: new AbortController().signal },
+    fetchFn: async (_url, options) => {
+      const body = JSON.parse(options?.body as string);
+      if (++requests === 1) return response(null, [call('write_file', { path: 'add.mjs', content: 'export const add = (a,b) => a+b;\n' })]);
+      assert.equal(body.tool_choice, 'none');
+      assert.match(body.messages.at(-1).content, /incomplete, failed or unverified/);
+      return response('Fixed addition. Tests were not run.');
+    } });
+  assert.equal(requests, 2); assert.equal(result.status, 'done');
+  if (result.status === 'done') assert.deepEqual(result.output.commands, []);
+});
 
 test('API tasks can finish after more than eight model rounds', async t => {
   const path = await repo(); t.after(() => rm(path, { recursive: true, force: true }));

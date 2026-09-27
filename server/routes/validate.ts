@@ -329,6 +329,8 @@ export function validateTemplateDefaults(defaults: unknown): string | null {
     return `defaults.type must be one of: ${[...NODE_TYPES].join(', ')}`;
   if (d.priority !== undefined && !PRIORITIES.has(d.priority as string))
     return `defaults.priority must be one of: ${[...PRIORITIES].join(', ')}`;
+  if (d.desiredOutput !== undefined && !DESIRED_OUTPUTS.has(d.desiredOutput as string))
+    return `defaults.desiredOutput must be one of: ${[...DESIRED_OUTPUTS].join(', ')}`;
 
   if (d.prompt !== undefined) {
     const err = validatePrompt(d.prompt);

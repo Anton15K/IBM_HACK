@@ -19,7 +19,7 @@ import {
   DEFAULT_MAX_TURNS,
   type ExecuteTaskInput,
 } from './executor.js';
-import { resolveBinding, captureSnapshot, runWithWorkspace } from './workspace.js';
+import { resolveBinding, captureSnapshot, runWithWorkspace, sameWorkspaceContent } from './workspace.js';
 import type { WorkerNode, GraphContext, WorkspaceBinding } from '../src/types.js';
 
 const execFile = promisify(_execFile);
@@ -625,6 +625,27 @@ describe('resolveBinding: root escape', () => {
 // Workspace: Cyrillic + newline untracked fingerprints
 // ---------------------------------------------------------------------------
 describe('captureSnapshot: special filenames', { timeout: 10000 }, () => {
+  test('Finder metadata does not cause drift but document and tracked metadata changes do', async () => {
+    const repoDir = await makeRepo(`finder-${randomUUID().slice(0, 8)}`);
+    const binding: WorkspaceBinding = { path: repoDir, branch: 'main', ref: 'HEAD' };
+    const before = await captureSnapshot(binding, [repoDir]);
+    await writeFile(join(repoDir, '.DS_Store'), 'finder view state');
+    const after = await captureSnapshot(binding, [repoDir]);
+    assert.equal(after.dirty, true); // Still accurately reports raw Git state.
+    assert.equal(before.fingerprint, after.fingerprint);
+    assert.equal(sameWorkspaceContent(before, { ...after, fingerprint: 'legacy-fingerprint' }), true);
+    await writeFile(join(repoDir, 'notes.md'), 'actual change');
+    const changed = await captureSnapshot(binding, [repoDir]);
+    assert.equal(sameWorkspaceContent(after, changed), false);
+    await writeFile(join(repoDir, '.DS_Store'), 'new view state');
+    assert.equal(sameWorkspaceContent(changed, await captureSnapshot(binding, [repoDir])), true);
+    await execFile('git', ['-C', repoDir, 'add', '.DS_Store']);
+    await execFile('git', ['-C', repoDir, 'commit', '-m', 'Track intentional metadata fixture']);
+    const tracked = await captureSnapshot(binding, [repoDir]);
+    await writeFile(join(repoDir, '.DS_Store'), 'tracked change');
+    assert.equal(sameWorkspaceContent(tracked, await captureSnapshot(binding, [repoDir])), false);
+  });
+
   test('Cyrillic filename included in fingerprint', async () => {
     const repoDir = await makeRepo(`cyrillic-${randomUUID().slice(0, 8)}`);
     const sha = await headSha(repoDir);

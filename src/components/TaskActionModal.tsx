@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store';
+import { resolveOutputMode } from '../output-mode';
 
 export default function TaskActionModal({ nodeId, mode, onClose }: {
   nodeId: string; mode: 'template' | 'delete'; onClose: () => void;
@@ -31,6 +32,7 @@ export default function TaskActionModal({ nodeId, mode, onClose }: {
       if (template) {
         const saved = await state.addTemplate({ name: name.trim(), description: current.prompt.task.slice(0, 80), defaults: {
           type: current.type, priority: current.priority, prompt: current.prompt, executor: current.executor, context: current.context,
+          desiredOutput: resolveOutputMode(current),
         } });
         if (!saved) throw new Error(useStore.getState().error ?? 'Could not save template. Please try again.');
       } else {
