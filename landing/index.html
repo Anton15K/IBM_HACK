@@ -48,6 +48,7 @@
     .capture { border-style:dashed; background:transparent; }
     .capture .placeholder { color:var(--muted); font-size:12px; letter-spacing:.07em; text-transform:uppercase; margin-bottom:18px; }
     .setup { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; margin-top:28px; }
+    .setup > div { min-width:0; }
     .setup h3 { font-size:16px; }
     pre { overflow-x:auto; padding:20px; margin:12px 0 24px; border:1px solid var(--line); border-radius:10px; background:#080c12; font-size:13px; line-height:1.8; }
     code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
@@ -62,7 +63,7 @@
   <a class="skip" href="#main">Skip to content</a>
   <header><nav class="wrap" aria-label="Main navigation">
     <a class="brand" href="#main">Team<span>Weave</span></a>
-    <div class="nav-links"><a href="#workflow">How it works</a><a href="#demo">Demo</a><a href="#run">Run locally</a><a href="https://github.com/Anton15K/IBM_HACK">GitHub ↗</a></div>
+    <div class="nav-links"><a href="#workflow">How it works</a><a href="#demo">Demo</a><a href="#run">Run locally</a><a href="#evidence">Built with Bob</a><a href="https://github.com/Anton15K/IBM_HACK">GitHub ↗</a></div>
   </nav></header>
   <main id="main" class="wrap">
     <div class="hero">
@@ -87,25 +88,30 @@
       <p class="section-intro">The local application records execution attempts and Git workspace snapshots. Mock tasks let you explore the workflow without making model calls.</p>
       <!-- TODO: replace this placeholder with the actual recorded walkthrough. -->
       <div class="recording"><div><span class="badge">Recording pending</span><h3>A walkthrough is on the way.</h3><p>The video has not been published yet. You can inspect the source or run the local preview below.</p><a href="#run">Open the local setup instructions ↓</a></div></div>
-      <div class="grid" aria-label="Planned product screenshots">
-        <!-- TODO: add real captures from the running application; these are placeholders. -->
-        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Organization &amp; team boards</h3><p>A view of the team hierarchy and separate project boards.</p></article>
-        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Task prompts &amp; dependencies</h3><p>A view of a task's instructions, inputs and project binding.</p></article>
-        <article class="card capture"><div class="placeholder">Screenshot pending · placeholder</div><h3>Review &amp; execution history</h3><p>A view of a review gate and the results behind an attempt.</p></article>
+      <div class="grid" aria-label="Product capabilities">
+        <article class="card"><h3>Shared team boards</h3><p>Create a company, assign editor or viewer access, and organize project work on a shared canvas.</p></article>
+        <article class="card"><h3>Repositories and models</h3><p>Bind an existing Git checkout, initialize a new repository or clone public HTTPS source. Configure planning and execution models.</p></article>
+        <article class="card"><h3>Runs and review</h3><p>See who launched work, inspect dependency and review waits, cancel active tasks, and revisit attempt history.</p></article>
       </div>
+    </section>
+    <section id="evidence" aria-labelledby="evidence-title">
+      <div class="eyebrow">Built with IBM Bob</div>
+      <h2 id="evidence-title">Real tasks. Inspectable evidence.</h2>
+      <p class="section-intro">IBM Bob contributed to the product foundation and interface through Shell and IDE sessions. Later integration and corrections were reviewed separately. Our report distinguishes implementation from Git operations and records remaining evidence gaps.</p>
+      <div class="actions"><a class="button" href="https://github.com/Anton15K/IBM_HACK/tree/main/bob_sessions">View Bob task summaries ↗</a><a class="button" href="https://github.com/Anton15K/IBM_HACK/blob/main/bob_report.md">Read the development report ↗</a></div>
     </section>
     <section id="run" aria-labelledby="run-title">
       <h2 id="run-title">Bring a small project. Start locally.</h2>
-      <p class="section-intro">Requires Node.js 24+, npm and Git. These instructions use a pinned preview revision that includes the authenticated backend and API model connections.</p>
+      <p class="section-intro">Requires Node.js 24+, npm and Git. These instructions use the current main branch, including authenticated team access, repository setup, API model connections and the shared run monitor.</p>
       <div class="setup">
         <div><h3>1. Get the preview</h3><pre><code>git clone https://github.com/Anton15K/IBM_HACK.git
 cd IBM_HACK
-git checkout 66a89853325e10f7636160117856dba65646a4f0
+git switch main
 npm ci</code></pre><p>Use an existing, trusted Git project as your agent workspace. Replace the example path with the parent directory containing that project.</p></div>
         <div><h3>2. Start the backend — terminal 1</h3><pre><code>TEAMWEAVE_WORKSPACE_ROOTS=/absolute/path/to/projects npm run dev:server</code></pre><h3>3. Start the frontend — terminal 2</h3><pre><code>npm run dev</code></pre><p>Open <a href="http://localhost:5173/IBM_HACK/">localhost:5173/IBM_HACK/</a>, register an organization, and create a team and project.</p></div>
       </div>
-      <p class="note">Start with Mock for a simulated run. Real agent execution needs your own configured provider and available quota. API model support is implemented; a successful live API coding run is not claimed here. The local runner is intended for trusted projects, not untrusted code.</p>
-      <a class="button" href="https://github.com/Anton15K/IBM_HACK/blob/66a89853325e10f7636160117856dba65646a4f0/README.md">Read the full setup and limitations ↗</a>
+      <p class="note">Start with Mock for a simulated run. Real agent execution needs your own configured provider and available quota. Configure your provider for both planning and worker execution; availability and limits depend on that provider. The local runner is intended for trusted projects, not untrusted code.</p>
+      <a class="button" href="https://github.com/Anton15K/IBM_HACK/blob/main/README.md">Read the full setup and limitations ↗</a>
     </section>
   </main>
   <footer><div class="wrap footer-content"><span>TeamWeave · Built for the IBM Bob Hackathon</span><span>Open source · <a href="https://github.com/Anton15K/IBM_HACK/blob/main/LICENSE">MIT license</a></span></div></footer>
