@@ -308,7 +308,8 @@ export default function Inspector() {
             hidden={tab !== 'task'}
           >
             <div className="p-4 space-y-4 text-xs">
-              <fieldset disabled={!editable || isGate} className="space-y-3">
+              {/* Name, type, priority, prompt, annotations — editable for gate too */}
+              <fieldset disabled={!editable} className="space-y-3">
                 <label>
                   Name
                   <input
@@ -317,34 +318,31 @@ export default function Inspector() {
                     onChange={(e) => update(node.id, { name: e.target.value })}
                   />
                 </label>
-                {!isGate && (
-                  <label>
-                    Type
-                    <select
-                      className="form-input mt-1"
-                      value={node.type}
-                      onChange={(e) =>
-                        update(node.id, {
-                          type: e.target.value as WorkerNode['type'],
-                        })
-                      }
-                    >
-                      {[
-                        'worker',
-                        'gate',
-                        ...(node.type === 'inbox' ? ['inbox'] : []),
-                      ].map((t) => (
-                        <option key={t}>{t}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+                <label>
+                  Type
+                  <select
+                    className="form-input mt-1"
+                    value={node.type}
+                    onChange={(e) =>
+                      update(node.id, {
+                        type: e.target.value as WorkerNode['type'],
+                      })
+                    }
+                  >
+                    {[
+                      'worker',
+                      'gate',
+                      ...(node.type === 'inbox' ? ['inbox'] : []),
+                    ].map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
                 <label>
                   Priority
                   <select
                     className="form-input mt-1"
                     value={node.priority}
-                    disabled={!editable}
                     onChange={(e) =>
                       update(node.id, {
                         priority: e.target.value as WorkerNode['priority'],
@@ -356,49 +354,45 @@ export default function Inspector() {
                     ))}
                   </select>
                 </label>
-                {!isGate && (
-                  <>
-                    <label>
-                      Task prompt
-                      <textarea
-                        rows={5}
-                        className="form-input mt-1"
-                        value={node.prompt.task}
-                        onChange={(e) =>
-                          update(node.id, {
-                            prompt: { ...node.prompt, task: e.target.value },
-                          })
-                        }
-                      />
-                    </label>
-                    <div className="flex gap-3">
-                      <button
-                        className="text-accent"
-                        onClick={() => setAnnotation('refinements')}
-                      >
-                        + Refinement
-                      </button>
-                      <button
-                        className="text-muted"
-                        onClick={() => setAnnotation('comments')}
-                      >
-                        + Comment
-                      </button>
+                <label>
+                  {isGate ? 'Review instructions' : 'Task prompt'}
+                  <textarea
+                    rows={5}
+                    className="form-input mt-1"
+                    value={node.prompt.task}
+                    onChange={(e) =>
+                      update(node.id, {
+                        prompt: { ...node.prompt, task: e.target.value },
+                      })
+                    }
+                  />
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    className="text-accent"
+                    onClick={() => setAnnotation('refinements')}
+                  >
+                    + Refinement
+                  </button>
+                  <button
+                    className="text-muted"
+                    onClick={() => setAnnotation('comments')}
+                  >
+                    + Comment
+                  </button>
+                </div>
+                {[...node.prompt.refinements, ...node.prompt.comments].map(
+                  (item, i) => (
+                    <div
+                      key={i}
+                      className="bg-card border border-line rounded-lg p-2"
+                    >
+                      <p className="text-muted text-[10px]">
+                        {item.author} · {item.ts}
+                      </p>
+                      <p className="whitespace-pre-wrap break-words">{item.text}</p>
                     </div>
-                    {[...node.prompt.refinements, ...node.prompt.comments].map(
-                      (item, i) => (
-                        <div
-                          key={i}
-                          className="bg-card border border-line rounded-lg p-2"
-                        >
-                          <p className="text-muted text-[10px]">
-                            {item.author} · {item.ts}
-                          </p>
-                          <p className="whitespace-pre-wrap break-words">{item.text}</p>
-                        </div>
-                      ),
-                    )}
-                  </>
+                  ),
                 )}
               </fieldset>
 
