@@ -1,11 +1,12 @@
 /**
  * server/routes/workspaceBrowse.ts
  *
- * Read-only workspace browsing and binding validation endpoints.
+ * Workspace browsing, preparation and binding validation endpoints.
  *
  * Endpoints:
  *   GET  /api/workspace/roots     — list configured allowed roots
  *   GET  /api/workspace/browse    — list directories under a root
+ *   POST /api/workspace/create    — create a folder or clone a public repository (admin)
  *   POST /api/workspace/validate  — validate a workspace binding at set-time
  *
  * Security:
@@ -19,6 +20,8 @@ import { promisify } from 'node:util';
 import { realpath, readdir, lstat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import { isAdmin } from '../db.js';
+import { createWorkspace } from '../workspaceCreate.js';
 import { resolveSession } from '../session.js';
 import { resolveAllowedRoots } from '../executor.js';
 import { assertUnderRoot, resolveBinding } from '../workspace.js';
@@ -102,6 +105,25 @@ export interface WorkspaceBrowseOptions {
 
 export function workspaceBrowseRoutes(opts: WorkspaceBrowseOptions = {}) {
   return async function routes(app: FastifyInstance): Promise<void> {
+    let creating = false;
+    app.post('/api/workspace/create', async (req, reply) => {
+      const session = resolveSession(app.db, req, reply);
+      if (!session) return;
+      if (!isAdmin(app.db, session.userId, session.orgId))
+        return reply.status(403).send({ error: 'Admin access required' });
+      if (creating) return reply.status(409).send({ error: 'Another workspace is being prepared. Try again shortly.' });
+      creating = true;
+      try {
+        const result = await createWorkspace(req.body, await resolveRoots(opts.allowedRootsOverride));
+        return reply.status(201).send(result);
+      } catch (error) {
+        const e = error as Error & { statusCode?: number };
+        return reply.status(e.statusCode ?? 400).send({ error: e.statusCode ? e.message : 'Cannot prepare workspace' });
+      } finally {
+        creating = false;
+      }
+    });
+
     // -----------------------------------------------------------------------
     // GET /api/workspace/roots
     // -----------------------------------------------------------------------

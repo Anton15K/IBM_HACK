@@ -93,3 +93,22 @@ for the full artifact table and usage examples.
 Try it: `bob mcp list`
 
 API file writes accept up to 256 KiB per file. Reads and tool output remain bounded to 64 KiB. Existing tasks keep their configured iteration and token limits; adjust them in the inspector for larger tasks. Provider context/output limits still apply.
+
+
+### Prepare a repository from the browser
+
+An organization admin can open **Browse…** in the workspace editor, choose a
+configured server directory, and select **New folder** or **Clone repository**.
+Folder creation makes a plain directory; it does not initialize Git. Clone accepts
+public HTTPS repositories on GitHub, GitLab and Bitbucket, creates a new directory,
+and fills in the checked-out branch. Click **Apply workspace**, then **Create
+Project** when creating a project. Private repositories and SSH authentication are
+not supported by this flow; an existing server checkout can still be selected.
+
+The server operator must configure `TEAMWEAVE_WORKSPACE_ROOTS` to an existing
+parent directory first. Paths stay inside those roots and existing targets are
+never overwritten. Clones use a shallow single-branch checkout, do not initialize
+submodules, disable credential helpers/redirects/hooks, and time out after 90
+seconds. A failed clone removes only its newly created target. Workspace roots
+remain shared host resources for trusted organizations; this is not a sandbox
+for untrusted public tenants.

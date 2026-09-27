@@ -7,12 +7,13 @@ import {
   acceptCreatedGraph,
 } from '../store';
 import { ancestors, visibleHierarchyChildren } from '../client-helpers';
-import type { GraphContext } from '../types';
+import type { GraphContext, WorkspaceBinding } from '../types';
 import WorkspaceEditor from './WorkspaceEditor';
 export default function Sidebar() {
   const state = useStore();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [newWorkspace, setNewWorkspace] = useState<WorkspaceBinding>();
   const graph = state.graphContexts.find((g) => g.id === state.selectedGraphId);
   const editable = !!graph && state.canEdit(graph.teamId);
   const trail = ancestors(state.teams, state.navigationId).filter(t => t.kind !== 'organization');
@@ -71,7 +72,7 @@ export default function Sidebar() {
           {state.canEdit(state.selectedTeamId) && (
             <button
               className="text-accent text-left"
-              onClick={() => setCreating(!creating)}
+              onClick={() => { setCreating(!creating); setNewWorkspace(undefined); setError(''); }}
             >
               + New Project
             </button>
@@ -85,7 +86,9 @@ export default function Sidebar() {
                 setError('');
                 const form = e.currentTarget;
                 const fd = Object.fromEntries(new FormData(form)) as Record<string, string>;
-                const { name, goal, wsPath, wsBranch, wsRef } = fd;
+                const { name, goal } = fd;
+                if (!newWorkspace) { setError('Select and apply a Git workspace first'); return; }
+                const { path: wsPath, branch: wsBranch, ref: wsRef } = newWorkspace;
                 const hasWorkspace = !!(wsPath?.trim() && wsBranch?.trim());
 
                 // Validate workspace at set-time when fields are filled
@@ -144,31 +147,8 @@ export default function Sidebar() {
                 placeholder="Project name"
               />
               <input name="goal" className="form-input" placeholder="Goal" />
-              <div className="text-muted text-[10px] uppercase mt-1">Git workspace on backend host</div>
-              <input
-                name="wsPath"
-                className="form-input"
-                required
-                placeholder="/absolute/path/to/existing/worktree"
-              />
-              <input
-                name="wsBranch"
-                className="form-input"
-                required
-                placeholder="Branch (currently checked out)"
-              />
-              <input
-                name="wsRef"
-                required
-                className="form-input"
-                defaultValue="HEAD"
-                placeholder="Ref (HEAD)"
-              />
-              <p className="text-muted text-[10px]">
-                Absolute path on the backend host. Does not create folders or
-                switch branches.
-              </p>
-              <button className="action-button">Create Project</button>
+              <WorkspaceEditor value={newWorkspace} onChange={setNewWorkspace} onPendingChange={() => setNewWorkspace(undefined)} />
+              <button className="action-button" disabled={!newWorkspace}>Create Project</button>
               {error && <p className="text-err">{error}</p>}
             </form>
           )}
