@@ -92,6 +92,7 @@ interface State extends Project {
   exportProject: () => Project;
 }
 let generation = 0;
+let actionGeneration = 0;
 let revision = -1;
 let refreshing: Promise<void> | null = null;
 const pending = new Map<string, Patch>();
@@ -289,10 +290,12 @@ function queue(key: string, patch: Patch) {
 async function action(key: string, operation: () => Promise<unknown>) {
   if (useStore.getState().busy.includes(key)) return;
   const current = generation;
+  const currentAction = actionGeneration;
   useStore.setState((s) => ({ busy: [...s.busy, key], error: null }));
   try {
     await flushEdits();
     requireSession(current);
+    if (currentAction !== actionGeneration) return;
     await operation();
     requireSession(current);
     await useStore.getState().refresh();
@@ -370,11 +373,18 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
       }
     },
     logout: async () => {
-      clearSession();
-      const current = generation;
+      if (get().loading) return;
+      let current = generation;
+      // Cancel queued actions while edits drain in the still-valid session.
+      actionGeneration++;
       set({ loading: true, error: null });
       try {
-        await api('/auth/logout', 'POST');
+        await flushEdits();
+        requireSession(current);
+        await sessionRequest('/auth/logout', 'POST');
+        requireSession(current);
+        clearSession();
+        current = generation;
       } catch (error) {
         if (current === generation) report(error);
       } finally {
