@@ -101,3 +101,21 @@ export const handoffBody = (
     ? { sourceAttemptId: node.currentAttemptId }
     : {}),
 });
+
+/** Organization containers belong to account scope, not the navigable hierarchy.
+ * Flatten them without reparenting stored data or dropping legacy root siblings.
+ */
+export function visibleHierarchyChildren(teams: Team[], id: string | null): Team[] {
+  const byId = new Map(teams.map(team => [team.id, team]));
+  const visibleParent = (team: Team): string | null => {
+    let parent = team.parentId;
+    const seen = new Set([team.id]);
+    while (parent && byId.get(parent)?.kind === 'organization') {
+      if (seen.has(parent)) return null;
+      seen.add(parent);
+      parent = byId.get(parent)!.parentId;
+    }
+    return parent;
+  };
+  return teams.filter(team => team.kind !== 'organization' && visibleParent(team) === id);
+}

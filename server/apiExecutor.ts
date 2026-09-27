@@ -31,7 +31,7 @@ import { validateBaseUrl, type ModelService } from './models.js';
 export const API_DEFAULT_TIMEOUT_MS = 600_000;
 export const API_MAX_OUTPUT_TOKENS = 65_536;
 export const API_DEFAULT_OUTPUT_TOKENS = 1024;
-export const API_MAX_ITERATIONS = 8;
+export const API_MAX_ITERATIONS = 32;
 export const API_MAX_TOOL_CALLS_PER_RESPONSE = 8;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024; // 4 MiB
 

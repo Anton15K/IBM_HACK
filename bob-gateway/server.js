@@ -28,7 +28,7 @@ import { fileURLToPath } from 'url';
 const PORT = 7142;
 const HOST = '127.0.0.1';
 const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-const BOB_BIN = path.join(os.homedir(), '.local', 'bin', 'bob');
+const BOB_BIN = process.env.BOB_BIN || path.join(os.homedir(), '.local', 'bin', 'bob');
 const API_KEY_FILE = path.join(os.homedir(), '.bob', 'api_key');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

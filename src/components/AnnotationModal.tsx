@@ -8,6 +8,7 @@ export default function AnnotationModal({ nodeId, field, onClose }: {
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const staged = useRef(false);
   const timestamp = useRef(new Date().toISOString());
   const [text, setText] = useState('');
@@ -15,10 +16,14 @@ export default function AnnotationModal({ nodeId, field, onClose }: {
   const [error, setError] = useState('');
   const refinement = field === 'refinements';
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    dialog.current?.showModal();
-    dialog.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
-    return () => { if (opener?.isConnected) opener.focus(); };
+    const element = dialog.current;
+    if (!opener.current) opener.current = document.activeElement as HTMLElement | null;
+    element?.showModal();
+    element?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+    return () => {
+      element?.close();
+      if (opener.current?.isConnected) opener.current.focus();
+    };
   }, []);
   const save = async () => {
     if (saving || !text.trim()) return;

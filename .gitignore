@@ -10,3 +10,8 @@ dist-server/
 .env
 *.key
 *.secret
+
+# Local Bob bridge, credentials and session logs
+/bob-bridge/
+/bob-bridge.zip
+/.bob/

@@ -24,7 +24,8 @@ import { join, isAbsolute } from 'node:path';
 
 // Constants
 
-export const MAX_FILE_BYTES = 64 * 1024;      // 64 KiB
+export const MAX_FILE_BYTES = 64 * 1024;      // Read limit: 64 KiB
+export const MAX_WRITE_FILE_BYTES = 256 * 1024; // Write limit: 256 KiB
 export const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 export const MAX_LIST_ENTRIES = 200;
 export const MAX_TEST_OUTPUT_BYTES = 64 * 1024;
@@ -106,7 +107,7 @@ export async function toolReadFile(args: Record<string, unknown>, workspaceRoot:
 
 export async function toolWriteFile(args: Record<string, unknown>, workspaceRoot: string): Promise<string> {
   if (typeof args.path !== 'string' || !args.path || typeof args.content !== 'string') return 'Error: path and content are required';
-  if (Buffer.byteLength(args.content) > MAX_FILE_BYTES) return 'Error: content exceeds 64 KiB';
+  if (Buffer.byteLength(args.content) > MAX_WRITE_FILE_BYTES) return 'Error: content exceeds 256 KiB';
   const check = await safeResolve(args.path, workspaceRoot);
   if ('error' in check) return `Error: ${check.error}`;
   try {
@@ -290,7 +291,7 @@ export const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a file in the workspace (max 64 KiB; patch mode only)',
+      description: 'Write content to a file in the workspace (max 256 KiB; patch mode only)',
       parameters: {
         type: 'object',
         properties: {

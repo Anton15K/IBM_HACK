@@ -6,6 +6,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel,
   Handle,
   Position,
   useNodesState,
@@ -17,7 +18,7 @@ import {
   getBezierPath,
 } from '@xyflow/react';
 import { useStore } from '../store';
-import { boardNodes, ancestors } from '../client-helpers';
+import { boardNodes, ancestors, visibleHierarchyChildren } from '../client-helpers';
 import { teamPositions } from '../canvas-layout';
 import { PlacementGesture } from '../canvas-gesture';
 import { WorkerNodeCard } from './WorkerNodeCard';
@@ -330,6 +331,19 @@ function Canvas() {
   const dragging = useRef(new Set<string>());
   const placementGesture = useRef(new PlacementGesture());
 
+  const [showMinimap, setShowMinimap] = useState(() => {
+    try { return localStorage.getItem('teamweave.showMinimap') !== 'false'; }
+    catch { return true; }
+  });
+  const toggleMinimap = () => {
+    setShowMinimap((visible) => {
+      const next = !visible;
+      try { localStorage.setItem('teamweave.showMinimap', String(next)); }
+      catch { /* The control still works when browser storage is unavailable. */ }
+      return next;
+    });
+  };
+
   const [placement, setPlacement] = useState<PlacementMode>(null);
   const [edgeEditor, setEdgeEditor] = useState<{
     fromNodeId: string;
@@ -344,7 +358,7 @@ function Canvas() {
     state.selectedTeamId,
     state.selectedGraphId,
   );
-  const children = state.teams.filter((t) => t.parentId === state.navigationId);
+  const children = visibleHierarchyChildren(state.teams, state.navigationId);
   const board = !!state.selectedTeamId;
   const editable = board && state.canEdit(state.selectedTeamId!);
   const isAdmin = state.auth?.role === 'admin';
@@ -543,6 +557,7 @@ function Canvas() {
         onClick={(e) => { if (edgeEditor) { e.stopPropagation(); setEdgeEditor(null); } }}
       >
         <ReactFlow
+          proOptions={{ hideAttribution: true }}
           nodes={flow}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -584,10 +599,30 @@ function Canvas() {
             color="#2A3550"
           />
           <Controls showInteractive={false} />
-          <MiniMap
-            nodeColor={board ? '#5B8CFF' : '#27344A'}
-            maskColor="rgba(7,10,16,.72)"
-          />
+          {showMinimap && (
+            <MiniMap
+              id="canvas-minimap"
+              ariaLabel="Canvas overview"
+              bgColor="#111725"
+              nodeColor={board ? '#5B8CFF' : '#526B94'}
+              nodeStrokeColor="#8199BD"
+              maskColor="rgba(7,10,16,.72)"
+              maskStrokeColor="#5B8CFF"
+              maskStrokeWidth={1}
+              style={{ bottom: 44 }}
+            />
+          )}
+          <Panel position="bottom-right">
+            <button
+              type="button"
+              className="small-button"
+              onClick={toggleMinimap}
+              aria-expanded={showMinimap}
+              aria-controls={showMinimap ? 'canvas-minimap' : undefined}
+            >
+              {showMinimap ? 'Hide minimap' : 'Show minimap'}
+            </button>
+          </Panel>
         </ReactFlow>
       </div>
 

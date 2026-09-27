@@ -11,6 +11,8 @@
  *  - orgId is always server-supplied, never from caller input.
  *  - baseUrl must be HTTPS, allowlisted hostname (no user/pass/query/hash),
  *    443 port only, and hostname must be in the server-configured allowlist.
+ *  - Local HTTP servers require an exact TEAMWEAVE_LOCAL_MODEL_URLS entry
+ *    and a loopback or private IPv4 address.
  *
  * Routes exposed:
  *  GET  /api/model-connections  — authenticated org member → [{id,label,baseUrl,model}]
@@ -101,17 +103,34 @@ function resolveAllowedHosts(injected?: string[]): string[] {
  * Validate a model connection base URL.
  * Returns null on success, or an error string.
  */
-export function validateBaseUrl(rawUrl: string, allowedHosts?: string[]): string | null {
+export function validateBaseUrl(rawUrl: string, allowedHosts?: string[], localUrls?: string[]): string | null {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl.trim());
   } catch {
     return 'baseUrl must be a valid URL';
   }
-  if (parsed.protocol !== 'https:') return 'baseUrl must use HTTPS';
   if (parsed.username || parsed.password) return 'baseUrl must not contain credentials';
   if (parsed.search) return 'baseUrl must not contain a query string';
   if (parsed.hash) return 'baseUrl must not contain a fragment';
+  if (parsed.protocol === 'http:') {
+    const octets = parsed.hostname.split('.').map(Number);
+    const privateIp = octets.length === 4 && octets.every(n => Number.isInteger(n) && n >= 0 && n <= 255) &&
+      (octets[0] === 127 || octets[0] === 10 ||
+        (octets[0] === 192 && octets[1] === 168) ||
+        (octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31));
+    const local = privateIp || parsed.hostname === 'localhost' || parsed.hostname === '[::1]';
+    const configured = localUrls ?? (process.env.TEAMWEAVE_LOCAL_MODEL_URLS ?? '').split(',');
+    const match = configured.some(raw => {
+      try {
+        const candidate = new URL(raw.trim());
+        return !candidate.username && !candidate.password && !candidate.search && !candidate.hash &&
+          candidate.href.replace(/\/+$/, '') === parsed.href.replace(/\/+$/, '');
+      } catch { return false; }
+    });
+    return local && match ? null : 'Local HTTP baseUrl must exactly match TEAMWEAVE_LOCAL_MODEL_URLS (loopback or private IP only)';
+  }
+  if (parsed.protocol !== 'https:') return 'baseUrl must use HTTPS';
   // Port check: must be 443 or default (empty)
   if (parsed.port && parsed.port !== '443') return 'baseUrl must use port 443 (or default HTTPS port)';
   const hosts = resolveAllowedHosts(allowedHosts);
