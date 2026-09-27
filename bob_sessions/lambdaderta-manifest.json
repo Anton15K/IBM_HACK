@@ -1,0 +1,130 @@
+[
+  {
+    "file": "teamweave_lambda_task01_backend_chat.png",
+    "title": "Server foundation \u2014 code changes",
+    "task_id": "ecddc18e1ca416c3065e26bc519655cb",
+    "workspace": "teamweave",
+    "bobcoins_displayed": "4.04",
+    "captured_at_utc": "2026-09-27T11:16:11.565871+00:00",
+    "related_commit": "a134979f45ff5d2b51279fe6ab1acb924e20e0d5",
+    "outcome": "Cost limit reached; later corrections are also included in the shared foundation commit.",
+    "sha256": "fdfe6ba44cd1e50117449c05dfa3f2a370ef8b53fb6b9ef84f84d696724f9bdd",
+    "original_jpeg_sha256": "62588e5168c7bbd247fb1a499e4a9bd37201ffeb3b32466e802e6b5ae558e382",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task01_backend_foundation.png",
+    "title": "Server foundation \u2014 task summary",
+    "task_id": "ecddc18e1ca416c3065e26bc519655cb",
+    "workspace": "teamweave",
+    "bobcoins_displayed": "4.04",
+    "captured_at_utc": "2026-09-27T11:15:50.999776+00:00",
+    "related_commit": "a134979f45ff5d2b51279fe6ab1acb924e20e0d5",
+    "outcome": "Cost limit reached; later corrections are also included in the shared foundation commit.",
+    "sha256": "c3227c14a3ce3b6a5861ac299747e860049101d8592464f813139953f27164d3",
+    "original_jpeg_sha256": "50b2d6acb439f13366d35d8dae7f2f50aa422ee80f4a1e039243f0872e1e28ae",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task02_git_binding.png",
+    "title": "Git workspace binding \u2014 task summary",
+    "task_id": "0234c2639ab9a98d8894b96f02831dae",
+    "workspace": "teamweave",
+    "bobcoins_displayed": "2.62",
+    "captured_at_utc": "2026-09-27T11:16:54.057577+00:00",
+    "related_commit": "a134979f45ff5d2b51279fe6ab1acb924e20e0d5",
+    "outcome": "Cost limit reached; later corrections are also included in the shared foundation commit.",
+    "sha256": "575352014103cc8ba40d3dd5e6a7328c30b68234e5cd512abf81aa1dac626806",
+    "original_jpeg_sha256": "1d2c15c3153ec4d855d3d07b26cc224238ea8385a9b904789cae22b1f7876a2b",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task03_local_executor.png",
+    "title": "Local execution adapter \u2014 task summary",
+    "task_id": "3f0f9ad0cdef23857de95383a21e5227",
+    "workspace": "teamweave",
+    "bobcoins_displayed": "4.05",
+    "captured_at_utc": "2026-09-27T11:17:32.554373+00:00",
+    "related_commit": "a134979f45ff5d2b51279fe6ab1acb924e20e0d5",
+    "outcome": "Cost limit reached; later corrections are also included in the shared foundation commit.",
+    "sha256": "fc43ab671f3f98fb7306fe7886f6b307050ef8c8d8eadfd050c85f6bd8f5620c",
+    "original_jpeg_sha256": "1750cd20ffb299fdb2e087c4955a5da9f75247d41dac2c23e2205508449235a1",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task24_placement_chat.png",
+    "title": "Node/team placement \u2014 result and tests",
+    "task_id": "4ab44092a6c3bde057de6c720254258c",
+    "workspace": "teamweave-landing",
+    "bobcoins_displayed": "5.89",
+    "captured_at_utc": "2026-09-27T11:20:51.609680+00:00",
+    "related_commit": "d90a4f340f37071c80d9fb0bc70da0db3d9c4f40",
+    "outcome": "IDE shows all ten checklist items completed; result and test report captured. The requirements view is scrolled to the implementation section.",
+    "sha256": "5ab4ef8d8fcd108f9655cb7522cbfb0d582d1eaf3be7344507244700358415e7",
+    "original_jpeg_sha256": "435052c8ccc678cc3d492124e2f991c7f2805a9b4056d914b6ba94c532f0972e",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task24_placement_spec.png",
+    "title": "Node/team placement \u2014 requirements and task summary",
+    "task_id": "4ab44092a6c3bde057de6c720254258c",
+    "workspace": "teamweave-landing",
+    "bobcoins_displayed": "5.89",
+    "captured_at_utc": "2026-09-27T11:20:35.450734+00:00",
+    "related_commit": "d90a4f340f37071c80d9fb0bc70da0db3d9c4f40",
+    "outcome": "IDE shows all ten checklist items completed; result and test report captured. The requirements view is scrolled to the implementation section.",
+    "sha256": "e47b1a3ec5bd429fe446ee57e0acac7e86d0696b8cfa3f8608be3046ca2640f0",
+    "original_jpeg_sha256": "e7b65d33c7df22a6dab67d5e7e8e1cfd9bb169d8a007a63c914bbc35ee824f13",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task27_canvas_chat.png",
+    "title": "Canvas controls \u2014 native editing and build",
+    "task_id": "4d669c02a86a8dce378ff047d2fbda3c",
+    "workspace": "teamweave-landing",
+    "bobcoins_displayed": "4.06",
+    "captured_at_utc": "2026-09-27T11:19:32.720961+00:00",
+    "related_commit": "17958d5ea6c2464d2e6d9f8905ff5a95bbe109ae",
+    "outcome": "Native IDE edits and checks are visible. Session stopped at the cumulative cost limit; code was committed separately.",
+    "sha256": "6c9e9fb8ba8c32a676807e1d8bca7f458fd27a05fdcca76ff0e416c559ca145d",
+    "original_jpeg_sha256": "349182feb1363b52d1343e68d2dd1c11b1404520bbe74275222f49d58784d52a",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  },
+  {
+    "file": "teamweave_lambda_task27_canvas_ide.png",
+    "title": "Canvas controls \u2014 task summary and checks",
+    "task_id": "4d669c02a86a8dce378ff047d2fbda3c",
+    "workspace": "teamweave-landing",
+    "bobcoins_displayed": "4.06",
+    "captured_at_utc": "2026-09-27T11:19:17.379791+00:00",
+    "related_commit": "17958d5ea6c2464d2e6d9f8905ff5a95bbe109ae",
+    "outcome": "Native IDE edits and checks are visible. Session stopped at the cumulative cost limit; code was committed separately.",
+    "sha256": "11b63c25c0fec5c4630528e4d3816364cdd5f273c9fc9a1343b7c4fbc81362d3",
+    "original_jpeg_sha256": "42f799ea15b5a967be0c5c856ca5ef10bca5a3e4eac1f743f5d63634a4adb420",
+    "dimensions": [
+      2940,
+      1846
+    ]
+  }
+]

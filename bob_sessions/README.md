@@ -21,7 +21,7 @@ member (Bob IDE -> Tasks -> task header -> session consumption summary).
 
 ## Teammates
 
-- Lambdaderta: add `teamweave_lambda_taskNN_desc.png` (own-account sessions)
+- Lambdaderta: [8 verified IDE screenshots across 5 own-account tasks](lambdaderta-sessions.md), with task IDs, cumulative displayed costs, capture timestamps and related commits.
 - Vovichatic: add `teamweave_vovich_taskNN_desc.png` (own-account sessions)
 
 Full spend ledger + per-task detail: `bob_report.md` in the repo root.
