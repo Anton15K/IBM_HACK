@@ -6,11 +6,11 @@ import { resolveOutputMode } from '../output-mode';
 import { previewInputs } from '../prompt-preview';
 import TaskResult, { type ResultAttempt } from './TaskResult';
 import { statusColor } from '../utils/colors';
-import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
 import AssembledPromptModal from './AssembledPromptModal';
 import WorkspaceEditor from './WorkspaceEditor';
 import AnnotationModal from './AnnotationModal';
+import TaskActionModal from './TaskActionModal';
 
 interface ModelDescriptor {
   id: string;
@@ -161,7 +161,7 @@ export default function Inspector() {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [target, setTarget] = useState(reworkTargets[0]?.id ?? '');
-  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [taskAction, setTaskAction] = useState<'template' | 'delete' | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // App keys the inspector by node ID; polling must preserve the chosen tab.
@@ -904,32 +904,15 @@ export default function Inspector() {
               Send to Team…
             </button>
             <button
-              disabled={savingTemplate}
               className="small-button flex-1"
-              onClick={async () => {
-                const name = window.prompt('Template name', node.name);
-                if (!name) return;
-                setSavingTemplate(true);
-                await state.addTemplate({
-                  name,
-                  description: node.prompt.task.slice(0, 80),
-                  defaults: {
-                    type: node.type,
-                    priority: node.priority,
-                    prompt: node.prompt,
-                    executor: node.executor,
-                    context: node.context,
-                  },
-                });
-                setSavingTemplate(false);
-              }}
+              onClick={() => setTaskAction('template')}
             >
               Save as template
             </button>
           </div>
           <button
             className="small-button w-full"
-            onClick={() => void requestTaskDeletion(node, (message) => window.confirm(message), state.removeNode)}
+            onClick={() => setTaskAction('delete')}
           >
             Delete task
           </button>
@@ -985,6 +968,7 @@ export default function Inspector() {
         </div>
       )}
       {annotation && <AnnotationModal key={node.id + annotation} nodeId={node.id} field={annotation} onClose={() => setAnnotation(null)} />}
+      {taskAction && <TaskActionModal nodeId={node.id} mode={taskAction} onClose={() => setTaskAction(null)} />}
     </>
   );
 }
