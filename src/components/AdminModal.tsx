@@ -19,6 +19,9 @@ export default function AdminModal() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const memberSelectRef = useRef<HTMLSelectElement>(null);
+  const focusMemberRef = useRef(false);
   const close = () => useStore.setState({ showAdmin: false });
   useEffect(() => {
     const panel = panelRef.current;
@@ -78,20 +81,40 @@ export default function AdminModal() {
       alive = false;
     };
   }, []);
-  const submit = async (path: string, body: unknown, method = 'POST') => {
+  useEffect(() => {
+    if (!busy && focusMemberRef.current) {
+      focusMemberRef.current = false;
+      memberSelectRef.current?.focus();
+    }
+  }, [busy]);
+  const submit = async (path: string, body: unknown, method = 'POST', form?: HTMLFormElement) => {
     const generation = sessionGeneration();
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await sessionRequest(path, method, body);
+      const saved = await sessionRequest<Member>(path, method, body);
       requireSession(generation);
+      if (path === '/members') {
+        // Clear the credential as soon as account creation succeeds.
+        const password = form?.elements.namedItem('password');
+        if (password instanceof HTMLInputElement) password.value = '';
+        setMembers((existing) => [...existing, saved]);
+        setSelectedMemberId(saved.id);
+        focusMemberRef.current = saved.role === 'member';
+        setMessage(saved.role === 'admin'
+          ? `${saved.name} can now log in as an administrator with access to the whole company.`
+          : `${saved.name}'s account is ready. Next, choose their team and assign Editor or Viewer below. Share the login address, email and password privately.`);
+      } else {
+        setMessage(path.startsWith('/teams/')
+          ? 'Team access saved. The member can log in using their account; an open session will update automatically.'
+          : 'Saved.');
+      }
       await state.refresh();
       requireSession(generation);
       const data = await sessionRequest<Member[]>('/members');
       requireSession(generation);
       setMembers(data);
-      setMessage('Saved.');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -161,24 +184,36 @@ export default function AdminModal() {
               void submit(
                 '/members',
                 Object.fromEntries(new FormData(e.currentTarget)),
+                'POST',
+                e.currentTarget,
               );
             }}
           >
-            <h3>Create member</h3>
+            <h3>1. Create a team member account</h3>
+            <p className="text-muted text-xs">
+              Members use the same login page. After creating their account, assign team access in step 2.
+              Administrators have access to the whole company.
+            </p>
+            <label className="block text-xs" htmlFor="member-name">Member name</label>
             <input
+              id="member-name"
               name="name"
               required
               className="form-input"
               placeholder="Name"
             />
+            <label className="block text-xs" htmlFor="member-email">Email</label>
             <input
+              id="member-email"
               name="email"
               type="email"
               required
               className="form-input"
               placeholder="Email"
             />
+            <label className="block text-xs" htmlFor="member-password">Password (10+ characters)</label>
             <input
+              id="member-password"
               name="password"
               type="password"
               autoComplete="new-password"
@@ -187,7 +222,8 @@ export default function AdminModal() {
               className="form-input"
               placeholder="Password (10+ characters)"
             />
-            <select name="role" className="form-input">
+            <label className="block text-xs" htmlFor="member-company-role">Company role</label>
+            <select id="member-company-role" name="role" className="form-input">
               <option value="member">Member</option>
               <option value="admin">Administrator</option>
             </select>
@@ -209,7 +245,7 @@ export default function AdminModal() {
                       (r) =>
                         `${state.teams.find((t) => t.id === r.teamId)?.name ?? r.teamId}: ${r.role}`,
                     )
-                    .join(' · ') || 'No explicit team roles'}
+                    .join(' · ') || (m.role === 'admin' ? 'Full company access' : 'No team access yet — complete step 2')}
                 </p>
               </div>
             ))}
@@ -226,31 +262,39 @@ export default function AdminModal() {
               );
             }}
           >
-            <h3>Assign inherited team role</h3>
-            <select name="userId" className="form-input" required>
+            <h3>2. Assign team access</h3>
+            <label className="block text-xs" htmlFor="access-member">Member</label>
+            <select id="access-member" ref={memberSelectRef} name="userId" className="form-input" required
+              value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)}>
+              <option value="" disabled>Choose a member</option>
               {members.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
               ))}
             </select>
-            <select name="teamId" className="form-input" required>
+            <label className="block text-xs" htmlFor="access-team">Team or department</label>
+            <select id="access-team" name="teamId" className="form-input" required>
               {state.teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}
             </select>
-            <select name="role" className="form-input">
-              <option value="editor">Editor</option>
-              <option value="viewer">Viewer</option>
+            <label className="block text-xs" htmlFor="access-role">Team role</label>
+            <select id="access-role" name="role" className="form-input">
+              <option value="editor">Editor — create, edit and run tasks</option>
+              <option value="viewer">Viewer — read only</option>
             </select>
             <p className="text-muted text-[10px]">
               Roles inherit to descendants. A closer explicit role takes
               precedence.
             </p>
+            {members.find((member) => member.id === selectedMemberId)?.role === 'admin' && (
+              <p className="text-muted text-xs">Administrators already have full company access; no team role is needed.</p>
+            )}
             <button
-              disabled={!state.teams.length || !members.length}
+              disabled={!state.teams.length || !selectedMemberId || members.find((member) => member.id === selectedMemberId)?.role === 'admin'}
               className="action-button"
             >
               Assign role
@@ -262,7 +306,7 @@ export default function AdminModal() {
             {error}
           </p>
         )}
-        {message && <p className="text-ok text-xs">{message}</p>}
+        {message && <p role="status" className="text-ok text-xs">{message}</p>}
       </div>
     </div>
   );

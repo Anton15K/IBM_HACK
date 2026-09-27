@@ -654,7 +654,14 @@ function Canvas() {
             </>
           ) : (
             <>
-              <span>No departments or teams at this level.</span>
+              <span>{!isAdmin && state.teams.length === 0
+                ? 'No team access yet.'
+                : 'No departments or teams at this level.'}</span>
+              {!isAdmin && state.teams.length === 0 && (
+                <span className="text-xs max-w-sm text-center">
+                  Ask your company administrator to add you to a team as an Editor or Viewer.
+                </span>
+              )}
               {isAdmin && (
                 <span className="text-accent text-[12px] pointer-events-auto">
                   Use the toolbar above to create a Department or Team.

@@ -30,6 +30,7 @@ test('retries project creation with the prepared workspace, without cloning twic
   globalThis.fetch = async (url, init) => {
     const path = String(url);
     calls.push(path);
+    if (path === '/api/auth/me') return json(useStore.getState().auth);
     if (path === '/api/workspace/create') return json(workspace);
     if (path === '/api/workspace/validate') return json({ ok: true, ...workspace });
     if (path === '/api/graphs') {
@@ -55,6 +56,7 @@ test('editors validate an existing folder and use the detected branch', async ()
   globalThis.fetch = async (url, init) => {
     const path = String(url);
     calls.push(path);
+    if (path === '/api/auth/me') return json(useStore.getState().auth);
     if (path === '/api/workspace/validate') {
       assert.equal(JSON.parse(String(init?.body)).branch, '');
       return json({ ok: true, path: workspace.path, branch: 'develop' });
@@ -67,7 +69,7 @@ test('editors validate an existing folder and use the detected branch', async ()
     throw new Error(`Unexpected ${path}`);
   };
   await createProject({ ...input, source: { kind: 'existing', workspace: { ...workspace, branch: '' } } }, sessionGeneration(), undefined, () => assert.fail('Existing folder must not be prepared'));
-  assert.deepEqual(calls, ['/api/workspace/validate', '/api/graphs', '/api/project']);
+  assert.deepEqual(calls, ['/api/workspace/validate', '/api/graphs', '/api/auth/me', '/api/project']);
 });
 
 test('editors cannot prepare a repository', async () => {

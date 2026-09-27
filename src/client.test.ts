@@ -183,6 +183,7 @@ test('rapid edits survive polling; PATCH serializes nested updates and flush pre
   let active = 0;
   let peak = 0;
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     const path = String(url);
     calls.push(`${init?.method} ${path}`);
     if (path === '/api/project') return json(p);
@@ -247,6 +248,7 @@ test('stale poll cannot erase a completed newer PATCH', async () => {
   const oldPoll = deferred<Response>();
   ready();
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     if (String(url) === '/api/project') return oldPoll.promise;
     if (init?.method === 'PATCH')
       return json({ ...node(), name: 'new name', revision: 2 });
@@ -262,6 +264,7 @@ test('stale poll cannot erase a completed newer PATCH', async () => {
 test('failed edit restores authoritative data and prevents run; run errors do not simulate', async () => {
   const calls: string[] = [];
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     const path = String(url);
     calls.push(`${init?.method} ${path}`);
     if (init?.method === 'PATCH') return json({ error: 'Save denied' }, 403);
@@ -303,6 +306,7 @@ test('logout during pending Run flush never dispatches into the next account', a
   const patch = deferred<Response>();
   const calls: string[] = [];
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     calls.push(String(url));
     return init?.method === 'PATCH'
       ? patch.promise
@@ -325,6 +329,7 @@ test('UUID template creation uses selected real graph and waits for server id', 
   const p = project();
   let payload: Record<string, unknown> | undefined;
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     if (String(url) === '/api/nodes') {
       payload = JSON.parse(String(init?.body));
       p.nodes.push({ ...node('server-uuid'), name: 'Template' });
@@ -430,6 +435,7 @@ test('newer draft survives an older failing PATCH during polling', async () => {
   const p = project();
   let patches = 0;
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     if (init?.method === 'PATCH') {
       patches++;
       if (patches === 1) return first.promise;
@@ -460,6 +466,7 @@ test('server-created node remains selected when an older poll is already in flig
   const oldPoll = deferred<Response>();
   const created = { ...node('created-uuid'), revision: 2 };
   globalThis.fetch = async (url, init) =>
+    String(url) === '/api/auth/me' ? json(useStore.getState().auth) :
     String(url) === '/api/project'
       ? oldPoll.promise
       : String(url) === '/api/nodes' && init?.method === 'POST'
@@ -497,6 +504,7 @@ test('immediate logout saves the last debounced edit before ending the session',
   ready();
   const calls: string[] = [];
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     calls.push(String(url));
     if (init?.method === 'PATCH') {
       assert.equal(JSON.parse(String(init.body)).name, 'Last edit');
@@ -514,6 +522,7 @@ test('failed save blocks logout and reports the failure in the existing session'
   ready();
   const calls: string[] = [];
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     calls.push(String(url));
     if (init?.method === 'PATCH') return json({ error: 'Save unavailable' }, 503);
     if (String(url) === '/api/project') return json(project());
@@ -545,6 +554,7 @@ test('session expiry while logout drains a save never logs out the next account'
   const patch = deferred<Response>();
   const calls: string[] = [];
   globalThis.fetch = async (url, init) => {
+    if (String(url) === '/api/auth/me') return json(useStore.getState().auth);
     calls.push(String(url));
     if (init?.method === 'PATCH') return patch.promise;
     return json({ error: 'Expired' }, 401);

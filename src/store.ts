@@ -397,6 +397,17 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
       const current = generation;
       const task = (async () => {
         try {
+          const auth = await sessionRequest<Auth>('/auth/me');
+          requireSession(current);
+          const previousAuth = get().auth!;
+          if (previousAuth.user.id !== auth.user.id || previousAuth.organization.id !== auth.organization.id) {
+            // Another tab changed the shared cookie. Old drafts and responses belong to that account.
+            clearSession();
+            await get().bootstrap();
+            return;
+          }
+          // Keep the polling effect stable when the account and roles are unchanged.
+          if (JSON.stringify(get().auth) !== JSON.stringify(auth)) set({ auth });
           const project = await sessionRequest<Project & { revision: number }>(
             '/project',
           );
