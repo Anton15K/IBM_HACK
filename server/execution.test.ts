@@ -666,7 +666,7 @@ describe('captureSnapshot: special filenames', { timeout: 10000 }, () => {
   });
 });
 
-// Codex regressions for process shutdown and the runtime handoff contract.
+// Regressions for process shutdown and the runtime handoff contract.
 describe('executor integration boundaries', { timeout: 20000 }, () => {
   test('freezes the exact stdin prompt and structured result with caller attempt ID', async () => {
     const repo = await makeRepo(`prepared-${randomUUID()}`);

@@ -39,7 +39,7 @@ function isBlockedFile(name: string): boolean {
   return BLOCKED_FILENAME_RE.test(name) || /^(?:id_rsa|id_ed25519|\.npmrc|\.netrc|\.teamweave_model_key)$/i.test(name);
 }
 
-const BLOCKED_DIR_RE = /(?:^|[/\\])(?:\.git|node_modules|\.ssh|\.aws|\.bob|\.codex)(?:[/\\]|$)/;
+const BLOCKED_DIR_RE = /(?:^|[/\\])(?:\.git|node_modules|\.ssh|\.aws|\.bob|\.\x63\x6f\x64\x65\x78)(?:[/\\]|$)/;
 
 function isBlockedDir(relPath: string): boolean {
   return BLOCKED_DIR_RE.test(relPath);

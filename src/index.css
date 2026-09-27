@@ -30,6 +30,12 @@
   }
 }
 
+/* ─── Indeterminate progress bar ─────────────────────────────────────────── */
+@keyframes indeterminate_slide {
+  0%   { left: -50%; }
+  100% { left: 110%; }
+}
+
 /* ─── Node running pulse ──────────────────────────────────────────────────── */
 @keyframes pulse_run {
   0%, 100% {
@@ -104,6 +110,8 @@
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 .react-flow__controls-button {
+  width: 32px !important;
+  height: 32px !important;
   background: #11151F !important;
   border-bottom: 1px solid #242C3D !important;
   color: #8B94A7 !important;
@@ -127,9 +135,9 @@
   display: none;
 }
 
-.form-input { width:100%; background:#111725; border:1px solid #242C3D; border-radius:8px; padding:7px 10px; color:#E4EAF4; font-size:12px; outline:none; }
+.form-input { width:100%; background:#111725; border:1px solid #242C3D; border-radius:8px; padding:7px 10px; color:#E4EAF4; font-size:14px; outline:none; }
 .form-input:focus { border-color:#5B8CFF; }
-.action-button,.small-button { border:1px solid #242C3D; border-radius:8px; padding:6px 10px; font-size:11px; }
+.action-button,.small-button { border:1px solid #242C3D; border-radius:8px; padding:7px 12px; font-size:13px; }
 .action-button { color:#5B8CFF; background:#5B8CFF22; border-color:#5B8CFF44; }
 .small-button { background:#111725; color:#B0BAD0; }
 button:disabled,fieldset:disabled { opacity:.5; }
@@ -149,3 +157,7 @@ button:disabled,fieldset:disabled { opacity:.5; }
 }
 .annotation-dialog::backdrop { background: #050810b8; backdrop-filter: blur(5px); }
 .annotation-dialog button:focus-visible { outline: 2px solid #5b8cff; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node, .react-flow__node * { animation: none !important; }
+}

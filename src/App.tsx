@@ -52,7 +52,7 @@ export default function App() {
       )}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 relative overflow-hidden" aria-labelledby="current-view-heading">
+        <main className="flex-1 min-w-0 relative overflow-hidden" aria-labelledby="current-view-heading">
           <h1 id="current-view-heading" className="sr-only">
             {state.selectedTeamId
               ? `${state.teams.find(t => t.id === state.selectedTeamId)?.name ?? 'Team'} — ${state.graphContexts.find(g => g.id === state.selectedGraphId)?.name ?? 'Task board'}`
