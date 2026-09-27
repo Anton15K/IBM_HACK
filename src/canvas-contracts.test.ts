@@ -438,7 +438,7 @@ describe('updateTeam', () => {
     assert.equal(useStore.getState().teams.find((t) => t.id === 'team1')!.name, 'Renamed');
   });
 
-  test('sessionRequest is properly guarded: stale team save ignored after logout', async () => {
+  test('sessionRequest is properly guarded: stale team save ignored after session expiry', async () => {
     const p = makeProject();
     const patchDeferred = deferred<Response>();
     globalThis.fetch = async (url, init) => {
@@ -449,8 +449,8 @@ describe('updateTeam', () => {
     ready(p);
     useStore.getState().updateTeam('team1', { space: { x: 999 } });
     const flush = flushEdits();
-    globalThis.fetch = async () => new Response(null, { status: 204 });
-    await useStore.getState().logout();
+    globalThis.fetch = async () => json({ error: 'Expired' }, 401);
+    await useStore.getState().bootstrap();
     // New session
     useStore.setState({ ...p, auth, loading: false, error: null });
     patchDeferred.resolve(

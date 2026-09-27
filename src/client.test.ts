@@ -104,8 +104,8 @@ function ready(p = project()) {
   useStore.getState().navigate('team');
 }
 afterEach(async () => {
-  globalThis.fetch = async () => new Response(null, { status: 204 });
-  await useStore.getState().logout();
+  globalThis.fetch = async () => json({ error: 'Expired' }, 401);
+  await useStore.getState().bootstrap();
   globalThis.fetch = originalFetch;
 });
 test('API includes cookies, rejects invalid/error JSON and handles 204', async () => {
@@ -311,9 +311,11 @@ test('logout during pending Run flush never dispatches into the next account', a
   useStore.getState().updateNode('node', { name: 'pending' });
   const run = useStore.getState().runNode('node');
   await Promise.resolve();
-  await useStore.getState().logout();
-  ready();
+  const logout = useStore.getState().logout();
+  assert.equal(calls.includes('/api/auth/logout'), false);
   patch.resolve(json({ ...node(), name: 'previous account' }));
+  await logout;
+  ready();
   await run;
   assert.equal(calls.includes('/api/nodes/node/run'), false);
   assert.equal(useStore.getState().nodes[0].name, 'Task');
@@ -488,4 +490,72 @@ test('wrong login credentials remain a visible error with a cleared login state'
   assert.equal(useStore.getState().auth, null);
   assert.equal(useStore.getState().loading, false);
   assert.equal(useStore.getState().error, 'Invalid email or password');
+});
+
+
+test('immediate logout saves the last debounced edit before ending the session', async () => {
+  ready();
+  const calls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    if (init?.method === 'PATCH') {
+      assert.equal(JSON.parse(String(init.body)).name, 'Last edit');
+      return json({ ...node(), name: 'Last edit', revision: 2 });
+    }
+    return new Response(null, { status: 204 });
+  };
+  useStore.getState().updateNode('node', { name: 'Last edit' });
+  await useStore.getState().logout();
+  assert.deepEqual(calls, ['/api/nodes/node', '/api/auth/logout']);
+  assert.equal(useStore.getState().auth, null);
+});
+
+test('failed save blocks logout and reports the failure in the existing session', async () => {
+  ready();
+  const calls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    if (init?.method === 'PATCH') return json({ error: 'Save unavailable' }, 503);
+    if (String(url) === '/api/project') return json(project());
+    return json(null);
+  };
+  useStore.getState().updateNode('node', { name: 'Unsaved edit' });
+  await useStore.getState().logout();
+  assert.equal(calls.includes('/api/auth/logout'), false);
+  assert.equal(useStore.getState().auth?.user.id, auth.user.id);
+  assert.equal(useStore.getState().loading, false);
+  assert.match(useStore.getState().error ?? '', /Save unavailable/);
+});
+
+
+test('failed logout request keeps the session available for retry', async () => {
+  ready();
+  globalThis.fetch = async () => json({ error: 'Logout unavailable' }, 503);
+  await useStore.getState().logout();
+  assert.equal(useStore.getState().auth?.user.id, auth.user.id);
+  assert.equal(useStore.getState().loading, false);
+  assert.equal(useStore.getState().error, 'Logout unavailable');
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  await useStore.getState().logout();
+  assert.equal(useStore.getState().auth, null);
+});
+
+test('session expiry while logout drains a save never logs out the next account', async () => {
+  ready();
+  const patch = deferred<Response>();
+  const calls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    if (init?.method === 'PATCH') return patch.promise;
+    return json({ error: 'Expired' }, 401);
+  };
+  useStore.getState().updateNode('node', { name: 'Old account' });
+  const logout = useStore.getState().logout();
+  await assert.rejects(sessionRequest('/protected'), /Expired/);
+  ready();
+  patch.resolve(json({ ...node(), name: 'Old account', revision: 2 }));
+  await logout;
+  assert.equal(calls.includes('/api/auth/logout'), false);
+  assert.equal(useStore.getState().nodes[0].name, 'Task');
+  assert.equal(useStore.getState().error, null);
 });
