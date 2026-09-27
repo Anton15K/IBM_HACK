@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { WorkspaceBinding } from '../types';
-import { sessionRequest, useStore } from '../store';
+import { sessionGeneration, sessionRequest, useStore } from '../store';
 
 // ---------------------------------------------------------------------------
 // Types for the API responses
@@ -106,15 +106,39 @@ export default function WorkspaceEditor({
   value,
   onChange,
   onPendingChange,
+  onDraftChange,
+  allowPrepare = true,
+  showApply = true,
 }: {
   value?: WorkspaceBinding;
   onChange: (value: WorkspaceBinding) => void;
   onPendingChange?: () => void;
+  onDraftChange?: (value: WorkspaceBinding) => void;
+  allowPrepare?: boolean;
+  showApply?: boolean;
 }) {
   const [draft, setDraft] = useState<WorkspaceBinding>(
     value ?? { path: '', branch: '', ref: 'HEAD' },
   );
   const [dirty, setDirty] = useState(false);
+  const draftRevision = useRef(0);
+  const validationPending = useRef(false);
+  const mounted = useRef(false);
+  const generation = useRef(sessionGeneration());
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isCurrent = () => mounted.current && generation.current === sessionGeneration();
+
+  function changeDraft(next: WorkspaceBinding) {
+    draftRevision.current += 1;
+    setDraft(next);
+    setDirty(true);
+    onPendingChange?.();
+    onDraftChange?.(next);
+    setValidateResult(null);
+  }
 
   // Browse popover state
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -129,7 +153,8 @@ export default function WorkspaceEditor({
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
 
-  const canPrepare = useStore((state) => state.auth?.role === 'admin');
+  const isAdmin = useStore((state) => state.auth?.role === 'admin');
+  const canPrepare = allowPrepare && isAdmin;
   const [createKind, setCreateKind] = useState<'folder' | 'clone' | 'init' | null>(null);
   const [createName, setCreateName] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
@@ -145,21 +170,19 @@ export default function WorkspaceEditor({
         parentPath: createParent, name: createName.trim(), kind: createKind,
         ...(createKind === 'clone' ? { url: cloneUrl.trim() } : {}),
       });
+      if (!isCurrent()) return;
       setCreateKind(null);
       setCreateName('');
       if (createKind !== 'folder') {
-        setDraft(result);
-        setDirty(true);
-        onPendingChange?.();
-        setValidateResult(null);
+        changeDraft(result);
         setBrowseOpen(false);
       } else {
         await loadBrowse(result.path);
       }
     } catch (error) {
-      setBrowseError((error as Error).message);
+      if (isCurrent()) setBrowseError((error as Error).message);
     } finally {
-      setPreparing(false);
+      if (isCurrent()) setPreparing(false);
     }
   }
 
@@ -170,7 +193,10 @@ export default function WorkspaceEditor({
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!dirty) setDraft(value ?? { path: '', branch: '', ref: 'HEAD' });
+    if (!dirty) {
+      draftRevision.current += 1;
+      setDraft(value ?? { path: '', branch: '', ref: 'HEAD' });
+    }
   }, [value, dirty]);
 
   // Close popover on outside click
@@ -188,11 +214,14 @@ export default function WorkspaceEditor({
   async function loadRoots() {
     try {
       const res = await sessionRequest<RootsResponse>('/workspace/roots');
+      if (!isCurrent()) return null;
       setRoots(res.roots);
       setRootsConfigured(res.configured);
       setRootsHint(res.hint ?? null);
       return res;
-    } catch {
+    } catch (error) {
+      if (!isCurrent()) return null;
+      setBrowseError((error as Error).message || 'Could not load workspace folders.');
       setRootsConfigured(false);
       setRootsHint(null);
       return null;
@@ -205,15 +234,16 @@ export default function WorkspaceEditor({
     try {
       const url = path ? `/workspace/browse?path=${encodeURIComponent(path)}` : '/workspace/browse';
       const res = await sessionRequest<BrowseResponse>(url);
+      if (!isCurrent()) return;
       setBrowsePath(path);
       setBrowseEntries(res.entries);
       setBrowseParent(res.parentPath);
       setBrowseCurrent(res.current ?? null);
       setBrowseRootEntries(res.rootEntries ?? []);
     } catch (err: unknown) {
-      setBrowseError((err as Error).message ?? 'Browse failed');
+      if (isCurrent()) setBrowseError((err as Error).message ?? 'Browse failed');
     } finally {
-      setBrowseLoading(false);
+      if (isCurrent()) setBrowseLoading(false);
     }
   }
 
@@ -234,10 +264,7 @@ export default function WorkspaceEditor({
 
   function handleEntryClick(entry: BrowseEntry) {
     if (entry.gitWorktree) {
-      setDraft((d) => ({ ...d, path: entry.path }));
-      setDirty(true);
-      onPendingChange?.();
-      setValidateResult(null);
+      changeDraft({ ...draft, path: entry.path });
       setBrowseOpen(false);
     } else {
       void loadBrowse(entry.path);
@@ -245,14 +272,15 @@ export default function WorkspaceEditor({
   }
 
   function handleCurrentClick(entry: BrowseCurrentEntry) {
-    setDraft((d) => ({ ...d, path: entry.path }));
-    setDirty(true);
-    onPendingChange?.();
-    setValidateResult(null);
+    changeDraft({ ...draft, path: entry.path });
     setBrowseOpen(false);
   }
 
   async function handleApply() {
+    if (validationPending.current) return;
+    validationPending.current = true;
+    const revision = draftRevision.current;
+    const isSameDraft = () => isCurrent() && revision === draftRevision.current;
     setValidating(true);
     setValidateResult(null);
     try {
@@ -260,6 +288,7 @@ export default function WorkspaceEditor({
       if (draft.branch.trim()) body.branch = draft.branch.trim();
       if (draft.ref.trim()) body.ref = draft.ref.trim();
       const res = await sessionRequest<ValidateResponse>('/workspace/validate', 'POST', body);
+      if (!isSameDraft()) return;
       setValidateResult(res);
       if (res.ok) {
         const finalBinding: WorkspaceBinding = {
@@ -275,9 +304,10 @@ export default function WorkspaceEditor({
         setDirty(false);
       }
     } catch (err: unknown) {
-      setValidateResult({ ok: false, code: 'NETWORK_ERROR', message: (err as Error).message });
+      if (isSameDraft()) setValidateResult({ ok: false, code: 'NETWORK_ERROR', message: (err as Error).message });
     } finally {
-      setValidating(false);
+      validationPending.current = false;
+      if (isCurrent()) setValidating(false);
     }
   }
 
@@ -301,10 +331,7 @@ export default function WorkspaceEditor({
             value={draft.path}
             placeholder="/absolute/existing/worktree"
             onChange={(e) => {
-              setDirty(true);
-              onPendingChange?.();
-              setValidateResult(null);
-              setDraft({ ...draft, path: e.target.value });
+              changeDraft({ ...draft, path: e.target.value });
             }}
           />
           <button
@@ -453,24 +480,21 @@ export default function WorkspaceEditor({
                 : 'HEAD'
             }
             onChange={(e) => {
-              setDirty(true);
-              onPendingChange?.();
-              setValidateResult(null);
-              setDraft({ ...draft, [key]: e.target.value });
+              changeDraft({ ...draft, [key]: e.target.value });
             }}
           />
         </label>
       ))}
 
       {/* Apply button */}
-      <button
+      {showApply && <button
         type="button"
         className="small-button"
         disabled={applyDisabled}
         onClick={handleApply}
       >
         {validating ? 'Validating…' : 'Apply workspace'}
-      </button>
+      </button>}
 
       {/* Validation result */}
       {validateResult && validateResult.ok && (
@@ -484,8 +508,9 @@ export default function WorkspaceEditor({
       )}
 
       <p className="text-muted text-[10px]">
-        Browse server folders to select a Git workspace. Admins can create folders, initialize Git repositories and clone public repositories. The checked-out
-        branch must match. Ref is resolved at start; this does not switch
+        Browse server folders to select a Git workspace.
+        {canPrepare && ' Admins can create folders, initialize Git repositories and clone public repositories.'}
+        {' '}The checked-out branch must match. Ref is resolved at start; this does not switch
         branches.
       </p>
     </div>

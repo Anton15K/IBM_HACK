@@ -7,14 +7,14 @@ export default function TopBar() {
   const editable = state.selectedTeamId && state.canEdit(state.selectedTeamId);
   const busy = state.busy.includes(`graph:${state.selectedGraphId}`);
   return (
-    <header className="bg-panel border-b border-line h-16 px-5 flex items-center gap-3 shrink-0">
+    <header className="bg-panel border-b border-line min-h-16 px-4 py-3 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 shrink-0 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
       <button
         className="text-ink font-semibold text-lg"
         onClick={() => state.navigate(null)}
       >
         TeamWeave
       </button>
-      <span className="text-muted text-xs">
+      <span className="text-muted text-xs max-w-40 truncate" title={state.auth?.organization.name}>
         {state.auth?.organization.name}
       </span>
       <div className="flex-1" />
@@ -85,7 +85,7 @@ export default function TopBar() {
         Export
       </button>
       <button className="small-button" onClick={state.toggleSettings}>
-        Backend
+        Model settings
       </button>
       {state.auth?.role === 'admin' && (
         <button
@@ -95,10 +95,12 @@ export default function TopBar() {
           Manage
         </button>
       )}
-      <span className="text-muted text-xs">{state.auth?.user.name}</span>
-      <button className="small-button" onClick={() => void state.logout()}>
-        Log out
-      </button>
+      <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
+        <span className="text-muted text-xs max-w-24 truncate" title={state.auth?.user.name}>{state.auth?.user.name}</span>
+        <button className="small-button" onClick={() => void state.logout()}>
+          Log out
+        </button>
+      </div>
     </header>
   );
 }

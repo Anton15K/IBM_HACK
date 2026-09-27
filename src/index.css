@@ -110,6 +110,8 @@
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 .react-flow__controls-button {
+  width: 32px !important;
+  height: 32px !important;
   background: #11151F !important;
   border-bottom: 1px solid #242C3D !important;
   color: #8B94A7 !important;
@@ -155,3 +157,7 @@ button:disabled,fieldset:disabled { opacity:.5; }
 }
 .annotation-dialog::backdrop { background: #050810b8; backdrop-filter: blur(5px); }
 .annotation-dialog button:focus-visible { outline: 2px solid #5b8cff; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node, .react-flow__node * { animation: none !important; }
+}

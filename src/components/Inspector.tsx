@@ -3,7 +3,7 @@ import { useStore, sessionRequest } from '../store';
 import type { WorkerNode, WorkspaceSnapshot, Provider } from '../types';
 import { assemblePrompt } from '../prompt';
 import { previewInputs } from '../prompt-preview';
-import { outputPresentation } from '../output-presentation';
+import TaskResult, { type ResultAttempt } from './TaskResult';
 import { statusColor } from '../utils/colors';
 import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
@@ -18,7 +18,7 @@ interface ModelDescriptor {
   model: string;
 }
 
-interface Attempt {
+interface Attempt extends ResultAttempt {
   id: string;
   nodeId: string;
   nodeVersion: number;
@@ -163,27 +163,9 @@ export default function Inspector() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Tabs — default based on node status; not reset by polling
+  // App keys the inspector by node ID; polling must preserve the chosen tab.
   const [tab, setTab] = useState<InspectorTab>(() => defaultTab(node));
-
-  // Update default tab when node status changes to done/failed/needs_approval
-  // but only if user hasn't manually picked a tab; track manual selection
-  const userPickedTab = useRef(false);
-  const prevNodeId = useRef(node.id);
-  useEffect(() => {
-    if (prevNodeId.current !== node.id) {
-      userPickedTab.current = false;
-      prevNodeId.current = node.id;
-      setTab(defaultTab(node));
-    }
-  });
-  useEffect(() => {
-    if (!userPickedTab.current) {
-      const next = defaultTab(node);
-      setTab((cur) => (cur !== next ? next : cur));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.status]);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // API model connections list for profile picker
   const [apiConnections, setApiConnections] = useState<ModelDescriptor[]>([]);
@@ -228,8 +210,7 @@ export default function Inspector() {
   const busy = state.busy.includes(node.id);
   const graph = state.graphContexts.find((g) => g.id === node.graphId);
   const update = state.updateNode;
-  const color = statusColor(node.status, node.priority);
-  const displayedOutput = outputPresentation(node, attempts);
+  const color = statusColor(node.status, 'normal');
   const [annotation, setAnnotation] = useState<'refinements' | 'comments' | null>(null);
   const previewPrompt = () => {
     if (!graph) return;
@@ -247,7 +228,6 @@ export default function Inspector() {
   const isGate = node.type === 'gate';
 
   const handleTabClick = (t: InspectorTab) => {
-    userPickedTab.current = true;
     setTab(t);
   };
 
@@ -277,11 +257,22 @@ export default function Inspector() {
 
         {/* Tabs */}
         <div role="tablist" aria-label="Inspector sections" className="flex border-b border-line text-xs">
-          {(['task', 'result', 'history'] as const).map((t) => (
+          {(['task', 'result', 'history'] as const).map((t, index) => (
             <button
               key={t}
               role="tab"
               aria-selected={tab === t}
+              tabIndex={tab === t ? 0 : -1}
+              ref={element => { tabRefs.current[index] = element; }}
+              onKeyDown={event => {
+                const next = event.key === 'ArrowRight' ? (index + 1) % 3 :
+                  event.key === 'ArrowLeft' ? (index + 2) % 3 :
+                  event.key === 'Home' ? 0 : event.key === 'End' ? 2 : null;
+                if (next === null) return;
+                event.preventDefault();
+                setTab((['task', 'result', 'history'] as const)[next]);
+                tabRefs.current[next]?.focus();
+              }}
               aria-controls={`inspector-panel-${t}`}
               id={`inspector-tab-${t}`}
               onClick={() => handleTabClick(t)}
@@ -303,6 +294,7 @@ export default function Inspector() {
           {/* ── TASK TAB ──────────────────────────────────────────────── */}
           <div
             role="tabpanel"
+            tabIndex={0}
             id="inspector-panel-task"
             aria-labelledby="inspector-tab-task"
             hidden={tab !== 'task'}
@@ -503,7 +495,7 @@ export default function Inspector() {
                       <span>Advanced execution settings</span>
                       <span>{advancedOpen ? '▲' : '▼'}</span>
                     </button>
-                    {advancedOpen && (
+                    <div hidden={!advancedOpen}>
                       <fieldset disabled={!editable} className="p-3 space-y-3 border-t border-line text-xs">
                         {isApiProvider && (
                           <OutputTokenInput value={node.executor.maxOutputTokens ?? 1024}
@@ -524,7 +516,7 @@ export default function Inspector() {
                         ))}
                         {(
                           [
-                            ...(!isApiProvider
+                            ...(isBobProvider
                               ? [
                                   {
                                     key: 'maxCost' as const,
@@ -717,7 +709,7 @@ export default function Inspector() {
                           />
                         </label>
                       </fieldset>
-                    )}
+                    </div>
                   </div>
 
                   <button className="text-accent text-xs" onClick={previewPrompt}>
@@ -755,58 +747,13 @@ export default function Inspector() {
           {/* ── RESULT TAB ────────────────────────────────────────────── */}
           <div
             role="tabpanel"
+            tabIndex={0}
             id="inspector-panel-result"
             aria-labelledby="inspector-tab-result"
             hidden={tab !== 'result'}
           >
             <div className="p-4 space-y-4 text-xs">
-              {displayedOutput.label && (
-                <p className="text-warn text-[11px] break-words">
-                  {displayedOutput.label}
-                </p>
-              )}
-
-              {/* Gate: show frozen incoming artifacts of current attempt */}
-              {isGate && node.status === 'needs_approval' && (() => {
-                const gateAttempt = attempts.find((a) => a.id === node.currentAttemptId);
-                if (gateAttempt) {
-                  return (
-                    <div className="space-y-2">
-                      <p className="text-muted text-[10px] uppercase">Frozen incoming artifacts (attempt {gateAttempt.id})</p>
-                      <pre className="whitespace-pre-wrap break-words bg-card border border-line rounded-lg p-2 text-[11px]">
-                        {gateAttempt.output?.summary || 'No output'}
-                      </pre>
-                      {(gateAttempt.output?.results ?? []).map((r, i) => <p key={i}>{r}</p>)}
-                      {(gateAttempt.output?.artifacts ?? []).map((r, i) => (
-                        <p className="text-accent" key={i}>{r}</p>
-                      ))}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Non-gate: show current live output */}
-              {!isGate && (
-                <div className="space-y-2">
-                  <pre className="whitespace-pre-wrap break-words bg-card border border-line rounded-lg p-2 text-[11px]">
-                    {node.output.summary || 'No output yet'}
-                  </pre>
-                  {node.output.results.map((r, i) => (
-                    <p key={i}>{r}</p>
-                  ))}
-                  {node.output.artifacts.map((r, i) => (
-                    <p className="text-accent" key={i}>
-                      {r}
-                    </p>
-                  ))}
-                  {node.output.commands.length > 0 && (
-                    <pre className="whitespace-pre-wrap bg-card border border-line rounded-lg p-2 text-[11px]">
-                      {node.output.commands.join('\n')}
-                    </pre>
-                  )}
-                </div>
-              )}
+              <TaskResult node={node} attempts={attempts} />
 
               {error && (
                 <p role="alert" className="text-err text-xs">
@@ -819,6 +766,7 @@ export default function Inspector() {
           {/* ── HISTORY TAB ───────────────────────────────────────────── */}
           <div
             role="tabpanel"
+            tabIndex={0}
             id="inspector-panel-history"
             aria-labelledby="inspector-tab-history"
             hidden={tab !== 'history'}

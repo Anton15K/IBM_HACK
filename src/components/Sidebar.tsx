@@ -1,147 +1,8 @@
 import { useState } from 'react';
-import {
-  useStore,
-  sessionRequest,
-  sessionGeneration,
-  requireSession,
-  acceptCreatedGraph,
-} from '../store';
+import { useStore, sessionGeneration } from '../store';
 import { ancestors, visibleHierarchyChildren } from '../client-helpers';
-import type { GraphContext, WorkspaceBinding } from '../types';
 import WorkspaceEditor from './WorkspaceEditor';
-
-/** Modal for creating a new project — separate from the existing project's settings. */
-function NewProjectModal({
-  teamId,
-  onClose,
-}: {
-  teamId: string;
-  onClose: () => void;
-}) {
-  const state = useStore();
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [newWorkspace, setNewWorkspace] = useState<WorkspaceBinding>();
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (submitting) return; // submission lock — no double-click
-    setSubmitting(true);
-    setError('');
-    const generation = sessionGeneration();
-    const form = e.currentTarget;
-    const fd = Object.fromEntries(new FormData(form)) as Record<string, string>;
-    const { name, goal } = fd;
-
-    if (!newWorkspace) {
-      setError('Select and apply a Git workspace first');
-      setSubmitting(false);
-      return;
-    }
-    const { path: wsPath, branch: wsBranch, ref: wsRef } = newWorkspace;
-    const hasWorkspace = !!(wsPath?.trim() && wsBranch?.trim());
-
-    if (hasWorkspace) {
-      try {
-        const validateBody: Record<string, string> = {
-          path: wsPath.trim(),
-          branch: wsBranch.trim(),
-          ref: wsRef?.trim() || 'HEAD',
-        };
-        const vRes = await sessionRequest<{ ok: boolean; message?: string }>(
-          '/workspace/validate',
-          'POST',
-          validateBody,
-        );
-        requireSession(generation);
-        if (!vRes.ok) {
-          setError(vRes.message ?? 'Workspace validation failed');
-          setSubmitting(false);
-          return;
-        }
-      } catch (err) {
-        setError((err as Error).message);
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    const body: Record<string, unknown> = { name, goal, teamId };
-    if (hasWorkspace) {
-      body.workspace = {
-        path: wsPath.trim(),
-        branch: wsBranch.trim(),
-        ref: wsRef?.trim() || 'HEAD',
-      };
-    }
-    try {
-      const created = await sessionRequest<GraphContext>('/graphs', 'POST', body);
-      requireSession(generation);
-      acceptCreatedGraph(created);
-      await state.refresh();
-      requireSession(generation);
-      state.selectGraph(created.id);
-      onClose();
-    } catch (err) {
-      setError((err as Error).message);
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="modal-shade" role="dialog" aria-modal="true" aria-label="New project">
-      <div className="modal-panel space-y-4 max-h-[85vh] overflow-y-auto">
-        <div className="flex justify-between items-center">
-          <h2 className="text-sm font-semibold">New Project</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="text-muted hover:text-ink w-7 h-7 flex items-center justify-center rounded transition-colors"
-          >
-            ×
-          </button>
-        </div>
-        <form className="space-y-3" onSubmit={handleSubmit}>
-          <label className="block">
-            Project name
-            <input
-              name="name"
-              className="form-input mt-1"
-              required
-              placeholder="e.g. Backend refactor"
-              autoFocus
-            />
-          </label>
-          <label className="block">
-            Goal
-            <input name="goal" className="form-input mt-1" placeholder="Describe the project goal" />
-          </label>
-          <div>
-            <div className="text-xs text-muted mb-1">Git workspace (required)</div>
-            <WorkspaceEditor
-              value={newWorkspace}
-              onChange={setNewWorkspace}
-              onPendingChange={() => setNewWorkspace(undefined)}
-            />
-          </div>
-          {error && <p className="text-err text-xs">{error}</p>}
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              className="action-button flex-1"
-              disabled={submitting || !newWorkspace}
-            >
-              {submitting ? 'Creating…' : 'Create project'}
-            </button>
-            <button type="button" className="small-button" onClick={onClose}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
+import NewProjectDialog from './NewProjectDialog';
 
 export default function Sidebar() {
   const state = useStore();
@@ -153,40 +14,24 @@ export default function Sidebar() {
   const trail = ancestors(state.teams, state.navigationId).filter(t => t.kind !== 'organization');
   const parent = trail[trail.length - 2]?.id ?? null;
 
-  if (collapsed) {
-    return (
-      <aside
-        className="bg-panel border-r border-line flex flex-col items-center py-3 shrink-0"
-        style={{ width: 40 }}
-        aria-label="Sidebar (collapsed)"
-      >
-        <button
-          aria-label="Expand sidebar"
-          onClick={() => setCollapsed(false)}
-          className="text-muted hover:text-ink transition-colors p-1 rounded"
-          title="Expand sidebar"
-        >
-          ▶
-        </button>
-      </aside>
-    );
-  }
-
   return (
     <>
-      <aside className="w-64 bg-panel border-r border-line p-4 flex flex-col gap-3 overflow-y-auto shrink-0 text-xs">
+      <aside className={`bg-panel border-r border-line overflow-y-auto shrink-0 text-xs ${collapsed ? 'w-10 p-2' : 'w-64 p-4'}`}
+        aria-label={collapsed ? 'Sidebar (collapsed)' : 'Sidebar'}>
         {/* Collapse button */}
         <div className="flex justify-end">
           <button
-            aria-label="Collapse sidebar"
-            onClick={() => setCollapsed(true)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => setCollapsed(value => !value)}
             className="text-muted hover:text-ink transition-colors p-1 rounded"
-            title="Collapse sidebar"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            ◀
+            {collapsed ? '▶' : '◀'}
           </button>
         </div>
 
+        <div hidden={collapsed}>
+        <div className="flex flex-col gap-3 mt-3">
         <div className="flex flex-wrap gap-1">
           <button className="text-accent" onClick={() => state.navigate(null)}>
             {state.auth?.organization.name ?? 'Workspace'}
@@ -261,7 +106,7 @@ export default function Sidebar() {
                   <span>Project settings</span>
                   <span>{settingsOpen ? '▲' : '▼'}</span>
                 </button>
-                {settingsOpen && (
+                <div hidden={!settingsOpen}>
                   <fieldset disabled={!editable} className="p-3 space-y-3 border-t border-line">
                     <label>
                       Shared goal
@@ -294,14 +139,14 @@ export default function Sidebar() {
                       />
                     </label>
                     <WorkspaceEditor
-                      key={graph.id}
+                      key={`${sessionGeneration()}:${graph.id}`}
                       value={graph.workspace}
                       onChange={(workspace) =>
                         state.updateGraph(graph.id, { workspace })
                       }
                     />
                   </fieldset>
-                )}
+                </div>
               </div>
             )}
           </>
@@ -312,10 +157,13 @@ export default function Sidebar() {
             with Manage.
           </p>
         )}
+        </div>
+        </div>
       </aside>
 
       {showNewProject && state.selectedTeamId && (
-        <NewProjectModal
+        <NewProjectDialog
+          key={`${sessionGeneration()}:${state.selectedTeamId}`}
           teamId={state.selectedTeamId}
           onClose={() => setShowNewProject(false)}
         />

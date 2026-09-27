@@ -598,7 +598,7 @@ function Canvas() {
             size={2}
             color="#2A3550"
           />
-          <Controls showInteractive={false} />
+          <Controls showInteractive={false} fitViewOptions={{ padding: 0.2, maxZoom: 1 }} />
           {showMinimap && (
             <MiniMap
               id="canvas-minimap"
@@ -612,7 +612,7 @@ function Canvas() {
               style={{ bottom: 48 }}
             />
           )}
-          <Panel position="bottom-left" style={{ marginBottom: 56, marginLeft: 4 }}>
+          <Panel position="bottom-left" style={{ marginBottom: 16, marginLeft: 64 }}>
             {board && <StatusLegend />}
           </Panel>
           <Panel position="bottom-right">

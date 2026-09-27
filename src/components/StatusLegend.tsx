@@ -23,12 +23,6 @@ export default function StatusLegend() {
   const [open, setOpen] = useState(false);
 
   return (
-    /* Placed in a ReactFlow Panel bottom-left with extra margin to clear the
-       built-in Controls (Fit View / zoom) which sit at bottom-left by default.
-       We use bottom-[10px] left-[10px] and the Controls sit at their default
-       position; the legend button is visually right-shifted via the parent
-       Panel. To avoid overlap with React Flow's own Controls block we mount
-       the button via a wrapper that the caller places in a Panel slot. */
     <div style={{ position: 'relative' }}>
       {open && (
         <div

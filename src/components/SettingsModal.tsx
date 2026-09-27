@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore, sessionRequest, sessionGeneration, requireSession } from '../store';
+import Modal from './Modal';
 
 interface ModelDescriptor {
   id: string;
@@ -9,7 +10,7 @@ interface ModelDescriptor {
 }
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
-const DEFAULT_MODEL = 'z-ai/glm-5.3-flash';
+const DEFAULT_MODEL = 'openrouter/free';
 
 export default function SettingsModal() {
   const { capabilities: c, toggleSettings, auth } = useStore();
@@ -54,6 +55,7 @@ export default function SettingsModal() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     const gen = sessionGeneration();
     setSaving(true);
     setSaveError('');
@@ -81,58 +83,29 @@ export default function SettingsModal() {
   };
 
   const handleClose = () => {
+    if (saving) return;
     setApiKey(''); // clear key on close regardless
     toggleSettings();
   };
 
   return (
-    <div className="modal-shade" onClick={handleClose}>
-      <div className="modal-panel space-y-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between">
-          <h2 className="font-semibold">Backend configuration</h2>
-          <button onClick={handleClose}>×</button>
-        </div>
-        {c ? (
-          <>
-            <p>
-              Bob Shell:{' '}
-              <span className={c.bobConfigured ? 'text-ok' : 'text-warn'}>
-                {c.bobConfigured ? 'Configured' : 'Not configured'}
-              </span>
-            </p>
-            <p>Providers: {c.providers.join(', ')}</p>
-            <p>Output modes: {c.outputModes.join(', ')}</p>
-            <p>
-              Workspace roots:{' '}
-              {c.workspaceRootsConfigured ? 'Configured' : 'Not configured'}
-            </p>
-            <p>
-              Bobcoin budget: default {c.maxCost.default}, maximum {c.maxCost.max}
-            </p>
-            <p className="text-muted text-xs">
-              Bob uses the Shell model configuration. Set Bob credentials and
-              TEAMWEAVE_WORKSPACE_ROOTS on the backend host. Select Mock
-              explicitly for a no-spend demonstration.
-            </p>
-          </>
-        ) : (
-          <p className="text-err">
-            Capabilities unavailable. Reload or sign in again.
-          </p>
-        )}
-
-        <hr className="border-line" />
-        <h3 className="font-semibold text-sm">API model connections</h3>
-        <p className="text-muted text-xs">
-          Each profile represents a different model. API tokens are separate
-          from Bobcoins and are charged by the external provider.
+    <Modal labelledBy="settings-title" describedBy="settings-help" busy={saving} onClose={handleClose}>
+      <div className="flex items-center justify-between gap-4">
+        <h2 id="settings-title" className="text-xl font-semibold">Model settings</h2>
+        <button className="small-button" aria-label="Close model settings" disabled={saving} onClick={handleClose}>×</button>
+      </div>
+      <section className="space-y-3" aria-labelledby="connections-title">
+        <h3 id="connections-title" className="font-semibold text-sm">API model connections</h3>
+        <p id="settings-help" className="text-muted text-xs">
+          Choose the models available to tasks and the project planner. API usage is
+          billed by the external provider, separately from Bobcoins.
         </p>
-        {loadingConns && <p className="text-muted text-xs">Loading…</p>}
-        {connError && <p className="text-err text-xs">{connError}</p>}
+        {loadingConns && <p className="text-muted text-xs" role="status">Loading connections…</p>}
+        {connError && <p className="text-err text-xs" role="alert">{connError}</p>}
         {connections.map((conn) => (
-          <div key={conn.id} className="bg-card border border-line rounded-lg p-2 text-xs space-y-1">
+          <div key={conn.id} className="bg-card border border-line rounded-lg p-3 text-xs space-y-1">
             <p className="font-medium">{conn.label}</p>
-            <p className="text-muted">{conn.model} · {conn.baseUrl}</p>
+            <p className="text-muted break-words">{conn.model} · {conn.baseUrl}</p>
           </div>
         ))}
         {!loadingConns && connections.length === 0 && !connError && (
@@ -141,53 +114,33 @@ export default function SettingsModal() {
         {isAdmin && (
           <>
             {!creating ? (
-              <button className="text-accent text-xs" onClick={() => setCreating(true)}>
+              <button className="small-button" onClick={() => setCreating(true)}>
                 + Add API model connection
               </button>
             ) : (
-              <form className="space-y-2 text-xs" onSubmit={(e) => void handleCreate(e)}>
-                <input
-                  className="form-input"
-                  required
-                  placeholder="Label"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  required
-                  placeholder={`Base URL (default: ${DEFAULT_BASE_URL})`}
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  required
-                  placeholder={`Model (default: ${DEFAULT_MODEL})`}
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  required
-                  type="password"
-                  placeholder="API key (not stored in browser)"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                />
-                {saveError && <p className="text-err">{saveError}</p>}
+              <form className="space-y-3 text-xs" onSubmit={(e) => void handleCreate(e)}>
+                <label className="block" htmlFor="connection-label">Connection name</label>
+                <input id="connection-label" className="form-input" required disabled={saving}
+                  placeholder="e.g. OpenRouter free models" value={label} onChange={(e) => setLabel(e.target.value)} />
+                <label className="block" htmlFor="connection-base-url">API base URL</label>
+                <input id="connection-base-url" className="form-input" required disabled={saving}
+                  value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+                <label className="block" htmlFor="connection-model">Model ID</label>
+                <input id="connection-model" className="form-input" required disabled={saving}
+                  value={model} onChange={(e) => setModel(e.target.value)} aria-describedby="connection-model-help" />
+                <p id="connection-model-help" className="text-muted">
+                  The default openrouter/free routes to free models on OpenRouter. Other model IDs may incur provider charges.
+                </p>
+                <label className="block" htmlFor="connection-api-key">API key</label>
+                <input id="connection-api-key" className="form-input" required disabled={saving} type="password"
+                  placeholder="Provider API key" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+                  aria-describedby="connection-key-help" />
+                <p id="connection-key-help" className="text-muted">Encrypted on the server; never stored in your browser.</p>
+                {saveError && <p className="text-err" role="alert">{saveError}</p>}
                 <div className="flex gap-2">
-                  <button className="action-button" disabled={saving}>
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={() => { setCreating(false); setApiKey(''); setSaveError(''); }}
-                  >
-                    Cancel
-                  </button>
+                  <button className="action-button" disabled={saving}>{saving ? 'Saving…' : 'Save connection'}</button>
+                  <button type="button" className="small-button" disabled={saving}
+                    onClick={() => { setCreating(false); setApiKey(''); setSaveError(''); }}>Cancel</button>
                 </div>
               </form>
             )}
@@ -196,7 +149,26 @@ export default function SettingsModal() {
         {!isAdmin && (
           <p className="text-muted text-xs">Members can view connections. Contact an org admin to add profiles.</p>
         )}
-      </div>
-    </div>
+      </section>
+      <details className="border-t border-line pt-4 text-xs">
+        <summary className="cursor-pointer font-medium">Backend diagnostics</summary>
+        <div className="space-y-2 pt-3">
+          {c ? (
+            <>
+              <p>Bob Shell: <span className={c.bobConfigured ? 'text-ok' : 'text-warn'}>{c.bobConfigured ? 'Configured' : 'Not configured'}</span></p>
+              <p>Providers: {c.providers.join(', ')}</p>
+              <p>Output modes: {c.outputModes.join(', ')}</p>
+              <p>Workspace roots: {c.workspaceRootsConfigured ? 'Configured' : 'Not configured'}</p>
+              <p>Bobcoin budget: default {c.maxCost.default}, maximum {c.maxCost.max}</p>
+              <p className="text-muted">
+                Bob uses the Shell model configuration. Set Bob credentials and
+                TEAMWEAVE_WORKSPACE_ROOTS on the backend host. Select Mock
+                explicitly for a no-spend demonstration.
+              </p>
+            </>
+          ) : <p className="text-err">Capabilities unavailable. Reload or sign in again.</p>}
+        </div>
+      </details>
+    </Modal>
   );
 }
