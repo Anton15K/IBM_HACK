@@ -6,7 +6,7 @@ import {
   requireSession,
   acceptCreatedGraph,
 } from '../store';
-import { ancestors } from '../client-helpers';
+import { ancestors, visibleHierarchyChildren } from '../client-helpers';
 import type { GraphContext } from '../types';
 import WorkspaceEditor from './WorkspaceEditor';
 export default function Sidebar() {
@@ -15,13 +15,13 @@ export default function Sidebar() {
   const [error, setError] = useState('');
   const graph = state.graphContexts.find((g) => g.id === state.selectedGraphId);
   const editable = !!graph && state.canEdit(graph.teamId);
-  const trail = ancestors(state.teams, state.navigationId);
+  const trail = ancestors(state.teams, state.navigationId).filter(t => t.kind !== 'organization');
   const parent = trail[trail.length - 2]?.id ?? null;
   return (
     <aside className="w-64 bg-panel border-r border-line p-4 flex flex-col gap-3 overflow-y-auto shrink-0 text-xs">
       <div className="flex flex-wrap gap-1">
         <button className="text-accent" onClick={() => state.navigate(null)}>
-          Company
+          {state.auth?.organization.name ?? 'Workspace'}
         </button>
         {trail.map((t) => (
           <span key={t.id}>
@@ -42,8 +42,7 @@ export default function Sidebar() {
         {state.selectedTeamId ? 'Team projects' : 'Departments & teams'}
       </h2>
       {!state.selectedTeamId &&
-        state.teams
-          .filter((t) => t.parentId === state.navigationId)
+        visibleHierarchyChildren(state.teams, state.navigationId)
           .map((t) => (
             <button
               className="small-button text-left"

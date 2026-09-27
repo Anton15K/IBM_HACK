@@ -83,3 +83,17 @@ test('disconnect removes subscriptions and hash listeners', () => {
   useStore.getState().navigate('team');
   assert.equal(host.location.hash, '#/');
 });
+
+test('legacy organization deep link resolves to implicit home without losing project navigation', () => {
+  const { host, go } = fixture('#/', true);
+  useStore.setState({ teams: [...useStore.getState().teams, { id: 'org-container', name: 'Organization', parentId: null, kind: 'organization', space: { x: 0, y: 0, w: 0, h: 0 } }] });
+  host.location.hash = '#/teams/org-container';
+  useStore.setState({ loading: false });
+  assert.equal(host.location.hash, '#/');
+  assert.equal(useStore.getState().navigationId, null);
+  go('#/teams/team/projects/second');
+  assert.equal(useStore.getState().selectedGraphId, 'second');
+  go('#/teams/org-container');
+  assert.equal(useStore.getState().selectedGraphId, null);
+  assert.equal(host.location.hash, '#/');
+});

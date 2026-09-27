@@ -410,6 +410,8 @@ export const useStore: UseBoundStore<StoreApi<State>> = create<State>(
     },
     navigate: (id) => {
       const team = get().teams.find((t) => t.id === id);
+      // Old organization URLs resolve to the implicit account home.
+      if (team?.kind === 'organization') id = null;
       const isTeam =
         team && (team.kind === 'team' || (!team.kind && team.space.w > 0));
       set({
