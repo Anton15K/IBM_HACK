@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { WorkspaceBinding } from '../types';
-import { sessionRequest } from '../store';
+import { sessionRequest, useStore } from '../store';
 
 // ---------------------------------------------------------------------------
 // Types for the API responses
@@ -105,9 +105,11 @@ export function isAbsoluteLikePath(p: string): boolean {
 export default function WorkspaceEditor({
   value,
   onChange,
+  onPendingChange,
 }: {
   value?: WorkspaceBinding;
   onChange: (value: WorkspaceBinding) => void;
+  onPendingChange?: () => void;
 }) {
   const [draft, setDraft] = useState<WorkspaceBinding>(
     value ?? { path: '', branch: '', ref: 'HEAD' },
@@ -126,6 +128,40 @@ export default function WorkspaceEditor({
   const [browseRootEntries, setBrowseRootEntries] = useState<BrowseCurrentEntry[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+
+  const canPrepare = useStore((state) => state.auth?.role === 'admin');
+  const [createKind, setCreateKind] = useState<'folder' | 'clone' | 'init' | null>(null);
+  const [createName, setCreateName] = useState('');
+  const [cloneUrl, setCloneUrl] = useState('');
+  const [createParent, setCreateParent] = useState('');
+  const [preparing, setPreparing] = useState(false);
+
+  async function prepareWorkspace() {
+    if (preparing || !createKind) return;
+    setPreparing(true);
+    setBrowseError(null);
+    try {
+      const result = await sessionRequest<WorkspaceBinding>('/workspace/create', 'POST', {
+        parentPath: createParent, name: createName.trim(), kind: createKind,
+        ...(createKind === 'clone' ? { url: cloneUrl.trim() } : {}),
+      });
+      setCreateKind(null);
+      setCreateName('');
+      if (createKind !== 'folder') {
+        setDraft(result);
+        setDirty(true);
+        onPendingChange?.();
+        setValidateResult(null);
+        setBrowseOpen(false);
+      } else {
+        await loadBrowse(result.path);
+      }
+    } catch (error) {
+      setBrowseError((error as Error).message);
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   // Validate state
   const [validating, setValidating] = useState(false);
@@ -183,6 +219,7 @@ export default function WorkspaceEditor({
 
   async function openBrowse() {
     setBrowseOpen(true);
+    setCreateKind(null);
     setBrowseError(null);
     setBrowseEntries([]);
     setBrowsePath(null);
@@ -199,6 +236,7 @@ export default function WorkspaceEditor({
     if (entry.gitWorktree) {
       setDraft((d) => ({ ...d, path: entry.path }));
       setDirty(true);
+      onPendingChange?.();
       setValidateResult(null);
       setBrowseOpen(false);
     } else {
@@ -209,6 +247,7 @@ export default function WorkspaceEditor({
   function handleCurrentClick(entry: BrowseCurrentEntry) {
     setDraft((d) => ({ ...d, path: entry.path }));
     setDirty(true);
+    onPendingChange?.();
     setValidateResult(null);
     setBrowseOpen(false);
   }
@@ -263,6 +302,7 @@ export default function WorkspaceEditor({
             placeholder="/absolute/existing/worktree"
             onChange={(e) => {
               setDirty(true);
+              onPendingChange?.();
               setValidateResult(null);
               setDraft({ ...draft, path: e.target.value });
             }}
@@ -314,13 +354,49 @@ export default function WorkspaceEditor({
             <p className="text-muted">No subdirectories found.</p>
           )}
 
+          {canPrepare && rootsConfigured && (
+            <fieldset disabled={preparing || browseLoading} className="space-y-2 border-b border-line pb-2">
+              <div className="flex flex-wrap gap-1">
+                <button type="button" className="small-button" onClick={() => {
+                  setCreateKind('folder'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
+                }}>New folder</button>
+                <button type="button" className="small-button" onClick={() => {
+                  setCreateKind('init'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
+                }}>New Git repository</button>
+                <button type="button" className="small-button" onClick={() => {
+                  setCreateKind('clone'); setCreateParent(browsePath ?? roots[0] ?? ''); setBrowseError(null);
+                }}>Clone repository</button>
+              </div>
+              {createKind && <div className="space-y-2">
+                <label className="block">Create in
+                  <select className="form-input" value={createParent} onChange={(e) => setCreateParent(e.target.value)}>
+                    {[...new Set([...roots, ...(browsePath ? [browsePath] : [])])].map((path) => <option key={path} value={path}>{path}</option>)}
+                  </select>
+                </label>
+                <label className="block">Folder name
+                  <input className="form-input" value={createName} maxLength={80} onChange={(e) => setCreateName(e.target.value)} placeholder="my-project" />
+                </label>
+                {createKind === 'init' && <p className="text-muted text-[10px]">Creates a new folder with a Git repository on main and an empty initial commit by TeamWeave. No remote is connected.</p>}
+                {createKind === 'clone' && <label className="block">Public repository HTTPS URL
+                  <input className="form-input" value={cloneUrl} onChange={(e) => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repository" />
+                  <span className="text-muted text-[10px]">GitHub, GitLab or Bitbucket. Public repositories only; no keys or passwords.</span>
+                </label>}
+                <button type="button" className="small-button" disabled={!createName.trim() || !createParent || (createKind === 'clone' && !cloneUrl.trim())} onClick={() => void prepareWorkspace()}>
+                  {preparing ? 'Preparing…' : createKind === 'clone' ? 'Clone into new folder' : createKind === 'init' ? 'Create Git repository' : 'Create folder'}
+                </button>
+                <button type="button" className="small-button ml-1" onClick={() => setCreateKind(null)}>Cancel</button>
+              </div>}
+              {preparing && <p role="status">Preparing workspace… Cloning may take up to 90 seconds.</p>}
+            </fieldset>
+          )}
+
           {/* F2b: root mode — each root selectable */}
           {browseRootEntries.map((entry) => (
             <button
               key={entry.path}
               type="button"
               className="w-full text-left small-button flex items-center gap-1 font-medium"
-              onClick={() => handleCurrentClick(entry)}
+              onClick={() => entry.gitWorktree ? handleCurrentClick(entry) : void loadBrowse(entry.path)}
               title={entry.path}
             >
               <span>🏠</span>
@@ -378,6 +454,7 @@ export default function WorkspaceEditor({
             }
             onChange={(e) => {
               setDirty(true);
+              onPendingChange?.();
               setValidateResult(null);
               setDraft({ ...draft, [key]: e.target.value });
             }}
@@ -407,7 +484,7 @@ export default function WorkspaceEditor({
       )}
 
       <p className="text-muted text-[10px]">
-        Use an existing Git folder/worktree on the backend host. The checked-out
+        Browse server folders to select a Git workspace. Admins can create folders, initialize Git repositories and clone public repositories. The checked-out
         branch must match. Ref is resolved at start; this does not switch
         branches.
       </p>
