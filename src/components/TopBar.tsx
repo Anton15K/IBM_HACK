@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import PlannerModal from './PlannerModal';
+import RunMonitor from './RunMonitor';
 import { useStore } from '../store';
 export default function TopBar() {
   const state = useStore();
   const [planningGraph, setPlanningGraph] = useState<string | null>(null);
+  const [showRuns, setShowRuns] = useState(false);
   const editable = state.selectedTeamId && state.canEdit(state.selectedTeamId);
   const busy = state.busy.includes(`graph:${state.selectedGraphId}`);
   return (
@@ -18,6 +20,7 @@ export default function TopBar() {
         {state.auth?.organization.name}
       </span>
       <div className="flex-1" />
+      {showRuns && <RunMonitor onClose={() => setShowRuns(false)} />}
       {planningGraph && planningGraph === state.selectedGraphId && editable && <PlannerModal key={planningGraph} graphId={planningGraph} close={() => setPlanningGraph(null)} />}
       {editable && (
         <>
@@ -84,6 +87,7 @@ export default function TopBar() {
       >
         Export
       </button>
+      <button className="small-button" onClick={() => setShowRuns(true)}>Runs &amp; queue</button>
       <button className="small-button" onClick={state.toggleSettings}>
         Model settings
       </button>
