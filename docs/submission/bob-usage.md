@@ -2,7 +2,7 @@
 
 We used IBM Bob to build TeamWeave, a shared canvas for coding-agent workflows with human review and traceable execution.
 
-Bob contributed the initial React canvas, worker nodes, executor integration, seed workflow, deployment configuration, and project rules and skills. On another team account, Bob contributed the backend foundation, Git workspace binding, local execution adapter, API-provider integration, node placement contracts, and canvas controls. We used both Bob Shell and the Bob IDE. Earlier Shell tasks were later opened in the IDE to capture their genuine task summaries; viewing a task there does not mean it was originally implemented through the IDE.
+Bob contributed the initial React canvas, worker nodes, executor integration, seed workflow, deployment configuration, and project rules and skills. On another team account, Bob contributed the backend foundation, Git workspace binding, local execution adapter, API-provider integration, node placement contracts, and canvas controls. The repository includes genuine Bob task-session summaries captured from Bob IDE.
 
 Direct IDE work included canvas editing and a later interface-clarity pass. Some sessions reached their cost limits before completing their scope. We retained useful changes, reviewed the resulting diffs, and finished corrections separately. We do not claim that every final line was written by Bob.
 
