@@ -16,7 +16,9 @@ TEAMWEAVE_WORKSPACE_ROOTS=/absolute/path/to/projects npm run dev:server
 npm run dev
 ```
 
-Open http://localhost:5173/IBM_HACK/ and register an organization. Use **Manage** to add departments, teams and members. Open a team, choose **New Project**, and enter an existing Git directory, its checked-out branch and a ref such as `HEAD` or a commit SHA.
+Open http://localhost:5173/IBM_HACK/ and register an organization. Use **Manage** to add departments and teams. To add a developer, create a **Member** account, then assign **Editor** access to their team; **Viewer** is read-only. Share the login address and credentials privately. Members use the same **Log in** page; registering a company creates a separate organization.
+
+Open a team and choose **New Project**. Select an existing server Git directory, create a new Git repository, or clone a public HTTPS repository. Fill in the name and repository fields, then click **Create project** once. Repository preparation is admin-only; editors can use an existing Git directory under the configured roots.
 
 The backend listens on `127.0.0.1:7142`; SQLite stores users, roles, projects and execution history in `.data/teamweave.db`. The browser uses authenticated API requests; project data and API credentials are not persisted in browser localStorage.
 
@@ -26,9 +28,9 @@ The backend listens on `127.0.0.1:7142`; SQLite stores users, roles, projects an
 |---|---|---|
 | Mock | None | Explicit simulation; no files changed or model calls |
 | Bob Shell | `BOB_API_KEY` or `~/.bob/api_key`; optional `BOB_BIN` | Runs Bob in the bound Git workspace with per-task coin and turn caps |
-| API model | An organization administrator adds a connection in **Backend** | OpenAI-compatible chat completions with bounded file tools and token limits |
+| API model | An organization administrator adds a connection in **Model settings** | OpenAI-compatible chat completions with bounded file tools and token limits |
 
-API connections accept a label, base URL, model name and write-only API key. For OpenRouter use `https://openrouter.ai/api/v1` and a namespaced model slug such as `z-ai/glm-5.3-flash`. For z.ai use `https://api.z.ai/api/paas/v4` and an available model such as `glm-4.7-flash`. For an OpenAI-compatible endpoint, include its API path, for example `https://api.openai.com/v1`. Compatibility varies by model; native Anthropic and Google endpoints are not implemented in this runtime.
+API connections accept a label, base URL, model name and write-only API key. For OpenRouter use `https://openrouter.ai/api/v1` and a model ID such as `openrouter/free` for a free-model test. For z.ai use `https://api.z.ai/api/paas/v4` and an available model such as `glm-4.7-flash`. For an OpenAI-compatible endpoint, include its API path, for example `https://api.openai.com/v1`. Compatibility varies by model; native Anthropic and Google endpoints are not implemented in this runtime.
 
 Credentials are encrypted on the server. Back up the private `.teamweave_model_key` file alongside the database; losing it makes saved credentials unreadable. Do not commit either file. Outbound model hosts must appear in `TEAMWEAVE_MODEL_HOSTS` (comma-separated; defaults: `api.z.ai,api.openai.com,openrouter.ai`); HTTPS is required and redirects are rejected.
 
@@ -38,7 +40,7 @@ For a local OpenAI-compatible server such as LM Studio, explicitly allow its exa
 TEAMWEAVE_LOCAL_MODEL_URLS=http://192.168.1.76:1234/v1 npm run dev:server
 ```
 
-Enter that same base URL, the model ID from the server, and its API token in **Backend**. HTTP is accepted only for explicitly listed loopback or private IP endpoints; different ports and API paths require their own entries (comma-separated). Existing HTTPS host restrictions still apply. This opt-in sends the token and task context over unencrypted local HTTP, so use it only on a trusted network.
+Enter that same base URL, the model ID from the server, and its API token in **Model settings**. HTTP is accepted only for explicitly listed loopback or private IP endpoints; different ports and API paths require their own entries (comma-separated). Existing HTTPS host restrictions still apply. This opt-in sends the token and task context over unencrypted local HTTP, so use it only on a trusted network.
 
 - **AI plan** generates a small proposed graph. Review it and click **Apply plan** to create draft nodes. Applying does not execute tasks; a stale proposal must be regenerated.
 - Each worker chooses a provider and, for API models, a connection. **Run pending tasks** respects dependencies and review gates; a node can also be run individually.
@@ -50,7 +52,7 @@ The local runner executes project test code as the backend's operating-system us
 
 ## Graphs are bound to projects
 
-Explicit project creation requires `workspace.path`, `workspace.branch` and `workspace.ref`. This release uses an existing directory; it does not create folders or silently switch branches. Automatically created empty boards remain editable drafts until a workspace is configured for real execution.
+Each project binds to a server Git directory, its current branch and a ref such as `HEAD`. **New Project** can validate an existing directory, initialize a new Git repository, or clone a supported public HTTPS repository. It never silently switches branches. Automatically created empty boards remain editable drafts until a workspace is configured for real execution.
 
 Before a real run, the server checks that the canonical Git worktree lies under the configured roots and that its current branch and commit match the requested binding. Nodes inherit the graph binding and may explicitly override it. Jobs sharing a worktree execute serially; separate worktrees can run independently.
 
@@ -64,6 +66,12 @@ Each attempt records the node definition and prompt, upstream results, Git commi
 - Human approval gates, bounded rework, cancellation and persisted attempt history.
 - Cross-team handoffs create an inbox item with the source attempt and output; the receiving team chooses how to act on it.
 - Existing project export remains available. Execution status comes from the backend rather than a simulated progress timer.
+
+### Shared runs and editing
+
+**Runs & queue** shows active work and up to 50 recent project runs or standalone task runs for teams you can read. New launches record who started them; older history shows **Unknown / not recorded**. Expand a project run to see task status, dependencies, human review and paused rework. A queued task is waiting for workspace or executor preparation; the monitor does not promise a queue position. Editors and administrators can cancel through the same server permission checks used on the board. Cancellation does not roll back files, and **stopping** remains visible while an executor cleans up.
+
+Boards and the open run monitor refresh about every 1.5 seconds. Multiple team members can create tasks and observe shared results. Duplicate active launches of the same node or graph are rejected. Different worktrees can execute concurrently; jobs sharing a worktree are serialized. Same-node simultaneous editing currently uses the last saved field value: there are no presence cursors, edit locks or automatic conflict merging. The node author is recorded separately from the run initiator; assigning a responsible person does not grant team permissions.
 
 ## Development
 
@@ -101,8 +109,8 @@ An organization admin can open **Browse…** in the workspace editor, choose a
 configured server directory, and select **New folder** or **Clone repository**.
 Folder creation makes a plain directory; it does not initialize Git. Clone accepts
 public HTTPS repositories on GitHub, GitLab and Bitbucket, creates a new directory,
-and fills in the checked-out branch. Click **Apply workspace**, then **Create
-Project** when creating a project. Private repositories and SSH authentication are
+and fills in the checked-out branch. For an existing project, click **Apply workspace**.
+In **New Project**, the final **Create project** button prepares, validates and binds the repository in one flow. Private repositories and SSH authentication are
 not supported by this flow; an existing server checkout can still be selected.
 
 The server operator must configure `TEAMWEAVE_WORKSPACE_ROOTS` to an existing
@@ -116,5 +124,6 @@ for untrusted public tenants.
 Use **New Git repository** to start without an existing remote. This creates a
 new folder, initializes branch `main`, and writes one empty setup commit authored
 by TeamWeave so the runner can resolve `HEAD`. The dialog discloses this commit;
-no source files or remote are added. Apply the binding to use it in a project.
+no source files or remote are added. New-project creation applies the binding automatically;
+for an existing project, apply the prepared binding in its project settings.
 Existing directories are never reinitialized or overwritten.

@@ -232,3 +232,42 @@ export interface Project {
   graphContexts: GraphContext[];
   templates: NodeTemplate[];
 }
+
+
+/** Server-recorded identity at launch time; absent on older history. */
+export interface ExecutionInitiator {
+  id: string;
+  name: string;
+}
+
+export interface RunMonitorTask {
+  id: string;
+  name: string;
+  status: string;
+  reason: string;
+}
+
+export interface RunMonitorItem {
+  id: string;
+  kind: 'graph' | 'attempt';
+  teamId: string;
+  teamName: string;
+  graphId: string;
+  graphName: string;
+  nodeId?: string;
+  name: string;
+  status: string;
+  active: boolean;
+  reason: string;
+  initiator?: ExecutionInitiator;
+  startedAt: string;
+  finishedAt?: string;
+  canCancel: boolean;
+  tasks?: RunMonitorTask[];
+  taskCount?: number;
+}
+
+export interface RunMonitorResponse {
+  items: RunMonitorItem[];
+  total: number;
+}

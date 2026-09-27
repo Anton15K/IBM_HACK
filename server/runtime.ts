@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { GraphContext, WorkerNode, WorkspaceSnapshot, ApiTokenUsage } from '../src/types.js';
-import { mutateProject, readProject } from './db.js';
+import type { GraphContext, WorkerNode, WorkspaceSnapshot, ApiTokenUsage, ExecutionInitiator, RunMonitorItem, RunMonitorResponse } from '../src/types.js';
+import { mutateProject, readProject, requireTeamAccess } from './db.js';
 import { assemblePrompt, executeTask, type ExecuteTaskInput, type ExecuteTaskResult, type IncomingEdge } from './executor.js';
 
 export type Executor = (input: ExecuteTaskInput) => Promise<ExecuteTaskResult>;
 type Output = WorkerNode['output'];
 type RuntimeNode = WorkerNode & { currentAttemptId?: string };
 export interface Attempt {
+  initiator?: ExecutionInitiator;
   id: string; orgId: string; runId?: string; nodeId: string; graphId: string; nodeVersion: number;
   node: WorkerNode; graph: GraphContext; assembledPrompt: string;
   incoming: IncomingEdge[]; startedAt: string; finishedAt?: string;
@@ -17,6 +18,7 @@ export interface Attempt {
   decision?: { decision: 'approve' | 'request_changes'; actor: string; feedback?: string; targetNodeId?: string; ts: string };
 }
 export interface Run {
+  initiator?: ExecutionInitiator;
   id: string; orgId: string; graphId: string; nodeIds: string[];
   status: 'running' | 'waiting' | 'completed' | 'failed' | 'canceled';
   reworkRounds: number; paused: boolean; startedAt: string; finishedAt?: string;
@@ -64,6 +66,75 @@ export class Runtime {
   }
   graphActive(orgId: string, graphId: string): boolean { const r = this.latestRun(orgId, graphId); return !!r && active(r); }
   nodeActive(orgId: string, nodeId: string): boolean { const n = this.node(orgId, nodeId); return [...this.jobs.values()].some(j => j.orgId === orgId && j.nodeId === nodeId) || !!n.currentAttemptId && ['running', 'waiting'].includes(this.attempt(orgId, n.currentAttemptId)?.status ?? ''); }
+  monitor(orgId: string, userId: string): RunMonitorResponse {
+    const project = this.project(orgId);
+    const readable = new Set(project.teams.filter(t => requireTeamAccess(this.db, userId, orgId, t.id, 'read')).map(t => t.id));
+    const editable = new Set(project.teams.filter(t => readable.has(t.id) && requireTeamAccess(this.db, userId, orgId, t.id, 'edit')).map(t => t.id));
+    const tasks = new Map(project.nodes.map(n => [n.id, n]));
+    const reason = (node: WorkerNode): string => {
+      if (node.status === 'queued') return 'Waiting for workspace or executor preparation';
+      if (node.status === 'running') return 'Executing task';
+      if (node.status === 'needs_approval') return 'Waiting for human approval';
+      if (node.type === 'inbox' && node.status !== 'done') return 'Waiting for inbox conversion to a worker';
+      if (node.status === 'blocked') {
+        const waiting = node.inputs.filter(i => i.enabled && tasks.get(i.fromNodeId)?.status !== 'done')
+          .map(i => { const input = tasks.get(i.fromNodeId); return input && readable.has(input.teamId) ? input.name : 'Unavailable dependency'; });
+        return waiting.length ? `Waiting for: ${waiting.join(', ')}` : 'Waiting for dispatch or an explicit retry';
+      }
+      if (node.status === 'rework') return 'Changes requested; waiting for resume';
+      if (node.status === 'draft' || node.status === 'ready') return 'Waiting for graph dispatch';
+      return '';
+    };
+    const result: RunMonitorItem[] = [];
+    const rows = this.db.prepare('SELECT payload FROM execution_runs WHERE orgId=? ORDER BY rowid DESC').all(orgId) as { payload: string }[];
+    for (const row of rows) {
+      const run: Run = JSON.parse(row.payload);
+      const graph = project.graphContexts.find(g => g.id === run.graphId);
+      if (!graph || !readable.has(graph.teamId)) continue;
+      const runTasks = project.nodes.filter(n => n.graphId === graph.id && n.teamId === graph.teamId && run.nodeIds.includes(n.id));
+      const stopping = !active(run) && [...this.jobs.entries()].some(([id, job]) => job.orgId === orgId && this.attempt(orgId, id)?.runId === run.id);
+      const status = stopping ? 'stopping' : run.status;
+      const isActive = active(run) || stopping;
+      const running = runTasks.filter(n => n.status === 'running').length;
+      const queued = runTasks.filter(n => n.status === 'queued').length;
+      const waitingReason = stopping ? 'Cancellation requested; waiting for executors to stop'
+        : run.paused ? 'Changes requested; waiting for a team editor to resume'
+        : running || queued ? `${running} running · ${queued} preparing`
+        : runTasks.some(n => n.status === 'needs_approval') ? 'Waiting for human approval'
+        : 'Waiting for dependencies or inbox conversion';
+      result.push({
+        id: run.id, kind: 'graph', teamId: graph.teamId,
+        teamName: project.teams.find(t => t.id === graph.teamId)?.name ?? 'Team',
+        graphId: graph.id, graphName: graph.name || 'Task board', name: graph.name || 'Task board',
+        status, active: isActive, reason: isActive ? waitingReason : '',
+        initiator: run.initiator, startedAt: run.startedAt, finishedAt: run.finishedAt,
+        canCancel: active(run) && editable.has(graph.teamId),
+        ...(isActive ? { tasks: runTasks.slice(0, 50).map(n => ({ id: n.id, name: n.name, status: n.status, reason: run.paused ? 'Graph paused for changes' : reason(n) })), taskCount: runTasks.length } : {}),
+      });
+    }
+    const attempts = this.db.prepare('SELECT payload FROM execution_attempts WHERE orgId=? ORDER BY rowid DESC').all(orgId) as { payload: string }[];
+    for (const row of attempts) {
+      const attempt: Attempt = JSON.parse(row.payload);
+      if (attempt.runId || !readable.has(attempt.node.teamId)) continue;
+      const node = tasks.get(attempt.nodeId);
+      const current = node?.currentAttemptId === attempt.id;
+      const pending = attempt.status === 'running' || attempt.status === 'waiting';
+      const stopping = !pending && this.jobs.has(attempt.id);
+      const status = stopping ? 'stopping' : pending && current ? node.status : attempt.error === 'Canceled' ? 'canceled' : attempt.status;
+      result.push({
+        id: attempt.id, kind: 'attempt', teamId: attempt.node.teamId,
+        teamName: project.teams.find(t => t.id === attempt.node.teamId)?.name ?? 'Team',
+        graphId: attempt.graphId, graphName: attempt.graph.name || 'Task board',
+        ...(node ? { nodeId: node.id } : {}), name: attempt.node.name,
+        status, active: pending || stopping,
+        reason: stopping ? 'Cancellation requested; waiting for executor to stop' : pending ? reason(current ? node : attempt.node) : '',
+        initiator: attempt.initiator, startedAt: attempt.startedAt, finishedAt: attempt.finishedAt,
+        canCancel: pending && current && editable.has(attempt.node.teamId),
+      });
+    }
+    result.sort((a, b) => Number(b.active) - Number(a.active) || b.startedAt.localeCompare(a.startedAt));
+    return { items: result.slice(0, 50), total: result.length };
+  }
   private saveAttempt(a: Attempt) {
     this.db.prepare('INSERT INTO execution_attempts(id,orgId,nodeId,graphId,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(a.id, a.orgId, a.nodeId, a.graphId, JSON.stringify(a));
   }
@@ -88,7 +159,7 @@ export class Runtime {
     if (meta) incoming.push({ fromNodeId: meta.sourceNodeId, attemptId: meta.sourceAttemptId, ...meta.sourceOutput ?? emptyOutput(), output: meta.sourceOutput ?? emptyOutput(), workspaceAfter: null });
     return incoming.filter((edge, index) => incoming.findIndex(i => i.attemptId === edge.attemptId && i.fromNodeId === edge.fromNodeId) === index);
   }
-  runNode(orgId: string, nodeId: string): Attempt {
+  runNode(orgId: string, nodeId: string, initiator?: ExecutionInitiator): Attempt {
     const node = this.node(orgId, nodeId);
     if (this.nodeActive(orgId, nodeId)) fail('Node already has an active attempt');
     if (this.graphActive(orgId, node.graphId)) fail('Graph run controls this node');
@@ -97,7 +168,7 @@ export class Runtime {
     const dependents = this.dependentNodes(orgId, node);
     if (dependents.some(n => this.nodeActive(orgId, n.id)))
       fail('A dependent task is active; finish or cancel it before rerunning this node');
-    const attempt = this.dispatch(orgId, node, incoming);
+    const attempt = this.dispatch(orgId, node, incoming, undefined, initiator);
     const invalidated = new Set(dependents.map(n => n.id));
     if (invalidated.size) mutateProject(this.db, orgId, p => ({
       ...p, nodes: p.nodes.map(n => invalidated.has(n.id)
@@ -119,12 +190,12 @@ export class Runtime {
     }
     return nodes.filter(n => n.id !== source.id && affected.has(n.id));
   }
-  runGraph(orgId: string, graphId: string): Run {
+  runGraph(orgId: string, graphId: string, initiator?: ExecutionInitiator): Run {
     this.graph(orgId, graphId);
     if (this.graphActive(orgId, graphId)) fail('Graph already has an active run');
     const nodes = this.project(orgId).nodes.filter(n => n.graphId === graphId);
     if (nodes.some(n => this.nodeActive(orgId, n.id))) fail('Graph has an active node attempt');
-    const run: Run = { id: randomUUID(), orgId, graphId, nodeIds: nodes.map(n => n.id), status: 'running', reworkRounds: 0, paused: false, startedAt: new Date().toISOString() };
+    const run: Run = { initiator: initiator && structuredClone(initiator), id: randomUUID(), orgId, graphId, nodeIds: nodes.map(n => n.id), status: 'running', reworkRounds: 0, paused: false, startedAt: new Date().toISOString() };
     this.saveRun(run);
     this.wake(run);
     return this.latestRun(orgId, graphId)!;
@@ -149,12 +220,12 @@ export class Runtime {
     // A first failed/canceled execution cannot silently authorize its own edits.
     return attempts.filter(p => p.id !== a.id && p.node.type === 'worker' && p.workspaceBefore?.repositoryPath === repositoryPath).sort((x, y) => x.startedAt.localeCompare(y.startedAt))[0]?.workspaceBefore ?? undefined;
   }
-  private dispatch(orgId: string, node: WorkerNode, incoming: IncomingEdge[], runId?: string): Attempt {
+  private dispatch(orgId: string, node: WorkerNode, incoming: IncomingEdge[], runId?: string, initiator?: ExecutionInitiator): Attempt {
     if (this.closing) fail('Runtime is closing');
     if (node.type === 'inbox') fail('Convert inbox to worker before execution');
     if (node.type === 'worker' && this.attemptCount(orgId, node, runId) >= (node.executor.maxAttempts ?? 3)) fail('Node attempt limit exhausted');
     const graph = this.graph(orgId, node.graphId);
-    const a: Attempt = { id: randomUUID(), orgId, runId, nodeId: node.id, graphId: node.graphId, nodeVersion: node.version, node: structuredClone(node), graph: structuredClone(graph), incoming: structuredClone(incoming), assembledPrompt: assemblePrompt(node, graph, incoming, null), startedAt: new Date().toISOString(), status: node.type === 'gate' ? 'waiting' : 'running', taskId: null, sessionCosts: null, workspaceBefore: null, workspaceAfter: null };
+    const a: Attempt = { initiator: initiator && structuredClone(initiator), id: randomUUID(), orgId, runId, nodeId: node.id, graphId: node.graphId, nodeVersion: node.version, node: structuredClone(node), graph: structuredClone(graph), incoming: structuredClone(incoming), assembledPrompt: assemblePrompt(node, graph, incoming, null), startedAt: new Date().toISOString(), status: node.type === 'gate' ? 'waiting' : 'running', taskId: null, sessionCosts: null, workspaceBefore: null, workspaceAfter: null };
     this.saveAttempt(a);
     this.updateNode(orgId, node.id, n => ({ ...n, currentAttemptId: a.id, status: node.type === 'gate' ? 'needs_approval' : 'queued', progress: 0 }));
     if (node.type === 'gate') return a;
@@ -206,7 +277,7 @@ export class Runtime {
       if (['done', 'failed', 'queued', 'running', 'needs_approval'].includes(node.status)) continue;
       const incoming = this.incoming(run.orgId, node);
       if (!incoming || node.type === 'inbox') { this.updateNode(run.orgId, node.id, n => ({ ...n, status: 'blocked', progress: 0 })); continue; }
-      try { this.dispatch(run.orgId, node, incoming, run.id); }
+      try { this.dispatch(run.orgId, node, incoming, run.id, run.initiator); }
       catch (error) { this.updateNode(run.orgId, node.id, n => ({ ...n, status: 'failed', progress: 0 })); }
     }
     nodes = this.project(run.orgId).nodes.filter(n => run.nodeIds.includes(n.id));
