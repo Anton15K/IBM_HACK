@@ -135,3 +135,17 @@
 button:disabled,fieldset:disabled { opacity:.5; }
 .modal-shade { position:fixed; inset:0; z-index:50; background:#0009; backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; }
 .modal-panel { background:#0F1521; color:#E4EAF4; border:1px solid #242C3D; border-radius:20px; padding:24px; width:480px; max-width:95vw; font-size:12px; }
+
+.annotation-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid #303b52;
+  border-radius: 20px;
+  background: #111725;
+  color: #e4eaf4;
+  box-shadow: 0 24px 80px #0009;
+}
+.annotation-dialog::backdrop { background: #050810b8; backdrop-filter: blur(5px); }
+.annotation-dialog button:focus-visible { outline: 2px solid #5b8cff; outline-offset: 3px; }

@@ -9,6 +9,7 @@ import { requestTaskDeletion } from '../node-actions';
 import SendToTeamModal from './SendToTeamModal';
 import AssembledPromptModal from './AssembledPromptModal';
 import WorkspaceEditor from './WorkspaceEditor';
+import AnnotationModal from './AnnotationModal';
 
 interface ModelDescriptor {
   id: string;
@@ -170,25 +171,7 @@ export default function Inspector() {
   const update = state.updateNode;
   const color = statusColor(node.status, node.priority);
   const displayedOutput = outputPresentation(node, attempts);
-  const annotate = (field: 'refinements' | 'comments') => {
-    const text = window.prompt(
-      field === 'refinements' ? 'Refinement' : 'Comment',
-    );
-    if (text?.trim())
-      update(node.id, {
-        prompt: {
-          ...node.prompt,
-          [field]: [
-            ...node.prompt[field],
-            {
-              ts: new Date().toISOString(),
-              author: state.auth!.user.email,
-              text,
-            },
-          ],
-        },
-      });
-  };
+  const [annotation, setAnnotation] = useState<'refinements' | 'comments' | null>(null);
   const previewPrompt = () => {
     if (!graph) return;
     const { incoming, unavailableInputIds } = previewInputs(node, state.nodes);
@@ -279,13 +262,13 @@ export default function Inspector() {
             <div className="flex gap-3">
               <button
                 className="text-accent"
-                onClick={() => annotate('refinements')}
+                onClick={() => setAnnotation('refinements')}
               >
                 + Refinement
               </button>
               <button
                 className="text-muted"
-                onClick={() => annotate('comments')}
+                onClick={() => setAnnotation('comments')}
               >
                 + Comment
               </button>
@@ -299,7 +282,7 @@ export default function Inspector() {
                   <p className="text-muted text-[9px]">
                     {item.author} · {item.ts}
                   </p>
-                  {item.text}
+                  <p className="whitespace-pre-wrap break-words">{item.text}</p>
                 </div>
               ),
             )}
@@ -878,6 +861,7 @@ export default function Inspector() {
           </div>
         </div>
       )}
+      {annotation && <AnnotationModal key={node.id + annotation} nodeId={node.id} field={annotation} onClose={() => setAnnotation(null)} />}
     </>
   );
 }
