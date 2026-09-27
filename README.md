@@ -90,6 +90,10 @@ Optional configuration: `TEAMWEAVE_DB` selects another database; `PORT` changes 
 
 MIT license.
 
+## Submission evidence
+
+See the [Bob development report](bob_report.md), [genuine task-summary screenshots](bob_sessions/README.md), and [submission materials and outstanding checklist](docs/submission/README.md).
+
 ## Bob integration
 
 The `.bob/` directory is a Bob 2.0 workspace package: `mcp.json` registers the

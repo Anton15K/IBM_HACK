@@ -1,9 +1,11 @@
 # bob_sessions/ — Bob task evidence
 
 Per hackathon requirements: task-session summary screenshots from every team
-member (Bob IDE -> Tasks -> task header -> session consumption summary).
+member, for **all project-related tasks** (Bob IDE -> Tasks -> task header -> session consumption summary).
 
-## Anton (lead account, via Hermes->Bob bridge)
+Current coverage is partial. Follow the [official capture procedure and completion checklist](../docs/submission/README.md#bob-evidence).
+
+## Anton15K
 
 | file | task id | title | coins |
 |---|---|---|---|
@@ -12,7 +14,7 @@ member (Bob IDE -> Tasks -> task header -> session consumption summary).
 | teamweave_fix_node_spacing.png | 239bf0a6 | Node spacing / edge visibility fix | 0.53 |
 | teamweave_m02_executors.png | 85bfdf74 | M2 executors, cross-team sends, replay, settings | 4.70 |
 | teamweave_bob_demo_fallback.png | f76dcfc1 | Bob executor demo fallback | 1.04 |
-| teamweave_m03_gateway.png | c32bcfad | M3 Bob Gateway (UI -> bob run bridge) | 1.00 |
+| teamweave_m03_gateway.png | c32bcfad | M3 Bob Gateway (UI to Bob Shell executor) | 1.00 |
 | teamweave_gateway_stdin_fix.png | e928a992 | Gateway stdin hang fix | 0.15 |
 | teamweave_gateway_parsing.png | ad348a5b | Gateway result parsing fix | 0.43 |
 | teamweave_seed_polish.png | 5e2dda96 | Seed demo polish | 0.50 |
@@ -22,6 +24,7 @@ member (Bob IDE -> Tasks -> task header -> session consumption summary).
 ## Teammates
 
 - Lambdaderta: [8 verified IDE screenshots across 5 own-account tasks](lambdaderta-sessions.md), with task IDs, cumulative displayed costs, capture timestamps and related commits.
-- Vovichatic: add `teamweave_vovich_taskNN_desc.png` (own-account sessions)
+- Lambdaderta completeness: [27-task inventory with missing captures](lambdaderta-task-inventory.md).
+- Vovichatic: **pending** — own-account project task summaries have not been received.
 
-Full spend ledger + per-task detail: `bob_report.md` in the repo root.
+See the [Bob development report](../bob_report.md) for verified coverage and cost limitations. This is not a complete team spend ledger.

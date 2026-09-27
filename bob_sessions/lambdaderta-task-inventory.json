@@ -1,0 +1,251 @@
+{
+  "verified_at": "2026-09-27",
+  "account_owner": "Lambdaderta",
+  "scope": "26 non-empty top-level tasks recorded for four TeamWeave source workspaces, plus one project runtime-verification fixture. Empty drafts and unrelated setup probes excluded. Continuations share the same task ID.",
+  "cost_semantics": "One latest cumulative local task cost per unique task ID. Not an account balance, available allowance, server billing total or proof of authorship. No parent/child double counting.",
+  "tasks": [
+    {
+      "task_id": "ecddc18e1ca416c3065e26bc519655cb",
+      "description": "Backend foundation",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 4.040972,
+      "summary_screenshot": "teamweave_lambda_task01_backend_foundation.png",
+      "evidence_status": "captured"
+    },
+    {
+      "task_id": "0234c2639ab9a98d8894b96f02831dae",
+      "description": "Git workspace binding",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 2.61753,
+      "summary_screenshot": "teamweave_lambda_task02_git_binding.png",
+      "evidence_status": "captured"
+    },
+    {
+      "task_id": "3f0f9ad0cdef23857de95383a21e5227",
+      "description": "Local execution adapter",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 4.05054,
+      "summary_screenshot": "teamweave_lambda_task03_local_executor.png",
+      "evidence_status": "captured"
+    },
+    {
+      "task_id": "58482461652188f4248a3b7d89003697",
+      "description": "Workspace and executor milestone continuation",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 3.089076,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "0997310774b6de47da7e3c2492f1f2a7",
+      "description": "Foundation milestone completion",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 1.637776,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "935f9f30d91fee62d37d0ebb95ff8fbd",
+      "description": "Foundation commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 0.131408,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "a6d132025e33ffbeedecffd1b65ddd70",
+      "description": "Foundation commit follow-up",
+      "category": "Git operation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 0.159076,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "251fb0c5ab0d9cc5a3081778443a6271",
+      "description": "UI integration commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 0.185724,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "1d9a4a42e25bae7899aa111e6496d47d",
+      "description": "Verified fixes commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 0.10553,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "2787d1bce246877ca54986bcca63b54c",
+      "description": "Public documentation wording",
+      "category": "Documentation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 0.283934,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "ac83081a04b7fa1c14befe6502608bc1",
+      "description": "API model backend",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 2.42398,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "fdbe0b2ad4a4c9685ebc2041e14e20ab",
+      "description": "API model frontend",
+      "category": "Implementation",
+      "workspace": "teamweave",
+      "recorded_cumulative_bobcoins": 1.530408,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "d4c7a6b1b2c8c789cdbc932bf40047ea",
+      "description": "Reviewed PR7 merge",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.061486,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "4ab44092a6c3bde057de6c720254258c",
+      "description": "Node and team placement contracts",
+      "category": "Implementation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 5.889376,
+      "summary_screenshot": "teamweave_lambda_task24_placement_spec.png",
+      "evidence_status": "captured"
+    },
+    {
+      "task_id": "f60b8ebb26ee3c32ae9a9a4917a6bb9c",
+      "description": "Canvas contract commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.210124,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "3784f5ba5ca2d7c3f2ee34354c1b66a3",
+      "description": "Canvas contract publication",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.314448,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "751aa2c7c436a8d3bdd8bafceaaed223",
+      "description": "Reviewed PR11 and PR10 merges",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.337696,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "4d669c02a86a8dce378ff047d2fbda3c",
+      "description": "Canvas controls and editing",
+      "category": "Implementation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 4.064792,
+      "summary_screenshot": "teamweave_lambda_task27_canvas_ide.png",
+      "evidence_status": "captured"
+    },
+    {
+      "task_id": "6771ccb390b14102c6b2942162860e65",
+      "description": "Canvas local commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.119592,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "bfd8448e1819c6acac21fac78aebc479",
+      "description": "Canvas correction commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.134088,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "2f4f65b0618f1bb9b47b5a188120c86d",
+      "description": "Canvas follow-up commit operation",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 0.133868,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "ce4f24d0962947c413464afa3676399b",
+      "description": "Reviewed PR publication and merges",
+      "category": "Git operation",
+      "workspace": "teamweave-landing",
+      "recorded_cumulative_bobcoins": 1.810236,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "6b0660754d6dcc1545fb89331a487473",
+      "description": "UI clarity and inspector refinement",
+      "category": "Implementation",
+      "workspace": "teamweave-qa3",
+      "recorded_cumulative_bobcoins": 5.607632,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "4f5aa9d7b6ee21768aae9df77f829b2b",
+      "description": "Reviewed post-create race fix publication",
+      "category": "Git operation",
+      "workspace": "teamweave-qa-review",
+      "recorded_cumulative_bobcoins": 0.324426,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "5416369dea3556c4ff4ce4afec847260",
+      "description": "Reviewed PR12 merge operation",
+      "category": "Git operation",
+      "workspace": "teamweave-qa-review",
+      "recorded_cumulative_bobcoins": 0.075694,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "14c4eb294b65abff5e6f8f9739884c99",
+      "description": "Approved project publication follow-up",
+      "category": "Git operation",
+      "workspace": "teamweave-qa-review",
+      "recorded_cumulative_bobcoins": 0.033908,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    },
+    {
+      "task_id": "24459066659df523078684ba3cec8367",
+      "description": "Real API, scheduler and Bob Shell runtime verification",
+      "category": "Runtime verification",
+      "workspace": "workspace (isolated verification fixture)",
+      "recorded_cumulative_bobcoins": 0.04199,
+      "summary_screenshot": null,
+      "evidence_status": "capture_pending"
+    }
+  ]
+}
